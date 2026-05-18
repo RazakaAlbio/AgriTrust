@@ -1,0 +1,80 @@
+# =============================================================================
+# config/agritrust_train.yaml
+# Agri-Trust — YOLOv8 Training Hyperparameter Configuration
+#
+# Used by train.py. All values are overridable via CLI arguments.
+# Reference: https://docs.ultralytics.com/usage/cfg/
+# =============================================================================
+
+# ── Model & Data ─────────────────────────────────────────────────────────────
+model: yolov8n.pt          # Nano: fastest; swap to yolov8s.pt for +accuracy
+# data path is resolved dynamically by train.py (absolute paths injected)
+
+imgsz: 640                 # Input resolution (OV5647 captures at 640x480+)
+batch: 12                  # RTX 2050 4GB optimal: ~1.8GB VRAM usage (safe headroom)
+workers: 4                 # DataLoader worker threads (4 = stable for laptops)
+cache: disk                # Cache preprocessed images to disk → faster from epoch 2+
+
+# ── Training Duration ────────────────────────────────────────────────────────
+epochs: 200                # raised: more headroom with patience=40
+patience: 40               # Early stopping: halt if no mAP@50 improvement
+                           # for this many epochs — allows slower improvements
+save_period: 10            # Save a checkpoint every N epochs
+
+# ── Optimizer ────────────────────────────────────────────────────────────────
+optimizer: AdamW           # AdamW is more stable than SGD for smaller datasets
+lr0: 0.001                 # Initial learning rate
+lrf: 0.01                  # Final LR ratio — final_lr = lr0 * lrf
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 5.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+cos_lr: true               # Cosine LR decay → smoother convergence, avoids plateau
+
+# ── Transfer Learning & Regularization ───────────────────────────────────────
+freeze: 10                 # Freeze backbone for first 10 epochs (head-first adapt)
+dropout: 0.15              # Light dropout → prevents overfitting on 7-class set
+
+# ── Loss Gains ───────────────────────────────────────────────────────────────
+# 3 ambiguous/rare classes removed (anthracnose, brown_rugose, sunscald)
+# 7-class dataset is more balanced → cls lowered back to 1.5
+# box: bounding-box regression loss weight
+# cls: classification loss weight
+# dfl: distribution focal loss weight
+box: 7.5
+cls: 1.5                   # Lowered: dataset now has 7 balanced classes
+dfl: 1.5
+
+# ── Ultralytics Built-in Augmentation ────────────────────────────────────────
+# These work on top of the RP Cam Albumentations pipeline in rpcam_augmentation.py
+hsv_h: 0.015               # Hue augmentation fraction
+hsv_s: 0.70                # Saturation augmentation fraction
+hsv_v: 0.40                # Value (brightness) augmentation fraction
+degrees: 10.0              # Rotation (±degrees)
+translate: 0.10            # Translation (fraction of image)
+scale: 0.50                # Scale gain (±fraction)
+shear: 2.0                 # Shear angle (±degrees)
+perspective: 0.0001        # Perspective distortion (small for top-down camera)
+flipud: 0.10               # Vertical flip probability
+fliplr: 0.50               # Horizontal flip probability
+mosaic: 1.0                # Mosaic augmentation probability (4-image stitch)
+mixup: 0.10                # MixUp augmentation probability
+copy_paste: 0.10           # Copy-paste augmentation probability
+close_mosaic: 20           # Turn off mosaic 20 epochs before end (fine-tuning)
+
+# ── Output ───────────────────────────────────────────────────────────────────
+project: python/runs       # All run artefacts saved here
+name: agritrust_v1         # Run subdirectory name
+exist_ok: true             # Allow resuming into existing run dir
+plots: true                # Generate PR curves, confusion matrix, etc.
+verbose: true
+
+# ── Validation ───────────────────────────────────────────────────────────────
+val: true                  # Run validation after every epoch
+conf: 0.25                 # Confidence threshold for validation predictions
+iou: 0.70                  # NMS IoU threshold
+
+# ── Device ───────────────────────────────────────────────────────────────────
+# device is set dynamically by train.py based on CUDA availability
+# device: 0                # Uncomment to hard-code GPU 0

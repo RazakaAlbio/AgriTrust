@@ -1,0 +1,33 @@
+# =============================================================================
+# Agri-Trust: YOLOv8 Training Pipeline — Dependencies
+# Conda Env : conda activate agritrust
+# Install   : pip install -r requirements.txt
+# =============================================================================
+
+# --- Core ML Framework ---
+ultralytics>=8.2.0          # YOLOv8 detection, training, export
+
+# --- Custom Augmentation (RP Cam simulation) ---
+albumentations>=1.3.0       # Advanced augmentation pipeline
+opencv-python>=4.8.0        # Image processing / video I/O
+
+# --- Data & Visualization ---
+numpy>=1.24.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+pandas>=2.0.0
+tqdm>=4.65.0
+Pillow>=10.0.0
+
+# --- Monitoring / Logging ---
+tensorboard>=2.13.0         # Training visualization (no WandB needed)
+torch>=2.0.0                # PyTorch (CUDA-compatible version expected from conda)
+torchvision>=0.15.0
+
+# --- Export & Deployment ---
+onnx>=1.14.0                # Intermediate ONNX export (required before TensorRT)
+onnxruntime-gpu>=1.15.0     # Optional: validate ONNX on GPU before Jetson deploy
+
+# --- Utility ---
+PyYAML>=6.0                 # YAML config patching
+rich>=13.0.0                # Pretty console output
