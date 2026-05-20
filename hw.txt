@@ -1,0 +1,39 @@
+No,Component_Name,Main_Function,Operating_Voltage,Interface_Protocol
+1,NVIDIA Jetson Nano 4GB,Unit pemroses utama (Main Processor) untuk menjalankan model Edge-AI (YOLOv8) dan logika sistem pusat.,5V (via DC Jack),Linux OS / Edge AI
+2,ESP32 Microcontroller,Sebagai node sensor dan ADC (Analog-to-Digital Converter) untuk membaca data berat dan gas.,3.3V / 5V (USB),Micro USB Serial
+3,Raspberry Pi Cam v1.3 (OV5647),Sensor visual 5MP untuk mengambil gambar komoditas dengan resolusi tinggi.,3.3V,MIPI CSI-2
+4,Load Cell 1kg + HX711,Mengukur berat komoditas secara presisi untuk standarisasi ukuran.,5V (via ESP32),Digital Serial
+5,Sensor MQ-135,Mendeteksi kadar gas hasil pembusukan untuk menentukan tingkat kesegaran.,5V (via ESP32),Analog (0-5V)
+6,Infrared Remote & Receiver,Media interaksi pengguna untuk melakukan navigasi menu dan pemilihan opsi pada layar OLED secara nirkabel.,3.3V / 5V,Digital (NEC Protocol 38kHz)
+7,RFID RC522,Autentikasi identitas pengguna menggunakan kartu RFID (13.56 MHz).,3.3V,SPI
+8,OLED Display 0.91 inch,Menampilkan antarmuka pengguna (UI) status sistem dan hasil grading.,3.3V,I2C (I2C1)
+9,Buzzer 5V,Memberikan sinyal audio sebagai umpan balik operasional (misal: sukses/gagal scan).,5V,Digital GPIO
+
+Complete Wiring Map
+
+Connection_Group,Source_Component,Module_Pin,Target_Device,Target_Pin,Protocol_Type,Wire_Color_Recommendation
+Edge_Master,Raspberry Pi Cam 5MP,Ribbon Cable,NVIDIA Jetson Nano,CSI Slot,MIPI CSI-2,White Ribbon
+Edge_Master,RFID RC522,SDA (SS),NVIDIA Jetson Nano,Pin 24 (GPIO 8 / SPI0 CS0),SPI,Blue
+Edge_Master,RFID RC522,SCK,NVIDIA Jetson Nano,Pin 23 (SPI0 SCK),SPI,Green
+Edge_Master,RFID RC522,MOSI,NVIDIA Jetson Nano,Pin 19 (SPI0 MOSI),SPI,Yellow
+Edge_Master,RFID RC522,MISO,NVIDIA Jetson Nano,Pin 21 (SPI0 MISO),SPI,Orange
+Edge_Master,RFID RC522,RST,NVIDIA Jetson Nano,Pin 22 (GPIO 25),SPI,White
+Edge_Master,RFID RC522,VCC 3.3V,NVIDIA Jetson Nano,Pin 1 (3.3V Power),Power,Red
+Edge_Master,RFID RC522,GND,NVIDIA Jetson Nano,Pin 6 (GND),Power,Black
+Edge_Master,OLED 0.91 inch,SDA,NVIDIA Jetson Nano,Pin 3 (I2C1 SDA),I2C,Blue
+Edge_Master,OLED 0.91 inch,SCL,NVIDIA Jetson Nano,Pin 5 (I2C1 SCL),I2C,Yellow
+Edge_Master,OLED 0.91 inch,VCC,NVIDIA Jetson Nano,Pin 17 (3.3V Power),Power,Red
+Edge_Master,OLED 0.91 inch,GND,NVIDIA Jetson Nano,Pin 14 (GND),Power,Black
+Edge_Master,Buzzer 5V,Positif (+),NVIDIA Jetson Nano,Pin 33 (GPIO 13 / PWM),Digital GPIO,Red
+Edge_Master,Buzzer 5V,Negatif (-),NVIDIA Jetson Nano,Pin 34 (GND),Power,Black
+Edge_Master,IR Receiver,OUT,NVIDIA Jetson Nano,Pin 7 (GPIO 4),Digital (NEC),Yellow
+Edge_Master,IR Receiver,VCC,NVIDIA Jetson Nano,Pin 2 (5V Power),Power,Red
+Edge_Master,IR Receiver,GND,NVIDIA Jetson Nano,Pin 9 (GND),Power,Black
+Sensor_Node,HX711 (Weight),DT (Data),ESP32 Microcontroller,GPIO 4,Digital Serial,Yellow
+Sensor_Node,HX711 (Weight),SCK (Clock),ESP32 Microcontroller,GPIO 5,Digital Serial,White
+Sensor_Node,HX711 (Weight),VCC,ESP32 Microcontroller,3.3V,Power,Red
+Sensor_Node,HX711 (Weight),GND,ESP32 Microcontroller,GND,Power,Black
+Sensor_Node,MQ-135 (Gas),Analog Out (AO),ESP32 Microcontroller,GPIO 34 (ADC1),Analog,Blue
+Sensor_Node,MQ-135 (Gas),VCC,ESP32 Microcontroller,5V,Power,Red
+Sensor_Node,MQ-135 (Gas),GND,ESP32 Microcontroller,GND,Power,Black
+Inter_Connect,ESP32 Microcontroller,Micro USB Port,NVIDIA Jetson Nano,USB Type-A Port,USB Serial,Black Cable

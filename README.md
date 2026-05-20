@@ -412,19 +412,8 @@ agritrust-hub-main/
 
 ### 🔴 Critical — Must Fix Before Deployment
 
-- **[ ] Web grading labels mismatch AI model**
-  `ConsumerVerification.tsx` and `FarmerDashboard.tsx` show binary `PASSED/FAILED`.
-  Must be updated to show: **Grade A / Grade B / Grade C / Reject**, class label, confidence.
-
-- **[ ] Sensor data on `/verify` uses mock values**
-  Weight and gas_ppm are hardcoded. Replace with real API call to Azure backend.
-
-- **[ ] `rgb` and `temperature` sensor fields are fake**
-  No RGB sensor or temperature sensor in the hardware BOM. Remove these fields.
-
-- **[ ] Azure backend not set up**
-  Azure VM is provisioned but empty. Backend API needs to be built and deployed
-  before any real data can flow from the Jetson Nano to the web app.
+- **[ ] Hardware POST Pipeline to Supabase not set up**
+  The edge devices (Jetson Nano) need their inference script configured to execute `POST` requests via the Supabase REST API to the `scans` table.
 
 - **[ ] TensorRT export not run on Jetson Nano**
   `export_tensorrt.py` must be run **on the Jetson Nano** (not Windows) to produce
@@ -436,17 +425,6 @@ agritrust-hub-main/
   Needs real Polygon Amoy TX hash. Placeholder: links to `https://amoy.polygonscan.com/`.
   Requires: Polygon Amoy wallet setup + Thirdweb/Tatum contract deployment.
 
-- **[ ] Admin panel has no real authentication**
-  `AdminLoginGate.tsx` uses a hardcoded client-side password. Replace with
-  JWT/session auth from Azure backend.
-
-- **[ ] RFID management tab is UI-only**
-  Scanning and linking RFID tags needs Azure API integration.
-
-- **[ ] Device status is static mock data**
-  `AdminPanel.tsx` `DEVICES` array is hardcoded. Should poll Azure backend
-  for real Jetson + ESP32 heartbeat status.
-
 - **[ ] Jetson Nano inference script not yet written**
   The full edge inference loop (camera → YOLOv8 → RFID → OLED → buzzer → POST)
   is planned but not yet implemented.
@@ -456,6 +434,11 @@ agritrust-hub-main/
 
 ### 🟢 Completed
 
+- **[✅] Full Supabase Backend Migration** — Replaced mock data across all dashboard tabs (Overview, Farmers, History) with real-time Supabase SQL queries and integrated RLS security.
+- **[✅] Admin Panel Authentication** — Secured the admin dashboard with Supabase Auth (JWT) instead of hardcoded client-side passwords.
+- **[✅] RFID Management** — Admin panel now has real `INSERT`, `DELETE`, and `UPDATE` capabilities for linking RFID tags to farmers via Supabase.
+- **[✅] Dynamic Web Grading Labels** — Dashboard charts and verification pages now map perfectly to the AI output (Grade A, Grade B, Grade C, Reject).
+- **[✅] Fixed Sensor Field Mismatches** — Removed fake `rgb` and `temperature` fields; `ConsumerVerification` now queries real `weight_kg` and `gas_ppm` from Supabase.
 - **[✅] v3 model training** — 78.0% mAP@50 validated (ep19/93, YOLOv8n)
 - **[✅] ONNX export** — `python/exports/best.onnx` (12.3 MB, 1.84× faster than PT)
 - **[✅] PT vs ONNX comparison** — functionally equivalent at conf ≥ 0.25
@@ -477,18 +460,17 @@ agritrust-hub-main/
 When the full system is ready for deployment, complete these steps in order:
 
 ```
-[ ] 1. Set up Azure backend API (Node.js/FastAPI + PostgreSQL)
-[ ] 2. Deploy backend to Azure VM, note the public API URL
+[x] 1. Set up Database schema and Supabase Auth
+[x] 2. Integrate Web Dashboard with Supabase via @supabase/supabase-js
 [ ] 3. Register Polygon Amoy wallet, deploy grading smart contract
-[ ] 4. Wire Thirdweb/Tatum API to Azure backend for tx anchoring
+[ ] 4. Wire Thirdweb/Tatum API to anchor hashes on-chain
 [ ] 5. Transfer best.pt to Jetson Nano
 [ ] 6. Run export_tensorrt.py on Jetson Nano → get best.engine
 [ ] 7. Flash ESP32 firmware (HX711 + MQ-135)
 [ ] 8. Wire all IoT components (RFID, OLED, Buzzer, CSI camera)
-[ ] 9. Write and test Jetson Nano inference loop script
-[ ] 10. Update VITE_API_BASE_URL in web app .env to Azure API URL
-[ ] 11. Test full end-to-end: scan → grade → POST → blockchain → QR → web
-[ ] 12. Build web app: npm run build → deploy to hosting
+[ ] 9. Write and test Jetson Nano inference loop script (posting to Supabase REST API)
+[ ] 10. Test full end-to-end: scan → grade → POST → blockchain → QR → web
+[ ] 11. Build web app: npm run build → deploy to hosting (Vercel/Netlify)
 ```
 
 ---

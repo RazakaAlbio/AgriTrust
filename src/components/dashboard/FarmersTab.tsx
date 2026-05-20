@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, User, Package, ShieldAlert, Star, MapPin, Calendar } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 interface FarmerProfile {
   id: string;
@@ -13,19 +14,58 @@ interface FarmerProfile {
   recentActivity: string;
 }
 
-const MOCK_FARMERS: FarmerProfile[] = [
-  { id: "F-001", name: "Ahmad Rizal", location: "Bandung, West Java", joinedDate: "2023-01-15", totalBatches: 142, averageGrade: "Grade A", rejectionRate: 2.1, recentActivity: "Submitted 1 batch 2 hours ago" },
-  { id: "F-002", name: "Siti Nurhaliza", location: "Lembang, West Java", joinedDate: "2023-03-22", totalBatches: 87, averageGrade: "Grade B", rejectionRate: 5.4, recentActivity: "Submitted 2 batches yesterday" },
-  { id: "F-003", name: "Budi Santoso", location: "Malang, East Java", joinedDate: "2022-11-05", totalBatches: 315, averageGrade: "Grade A", rejectionRate: 1.2, recentActivity: "Submitted 5 batches 3 days ago" },
-  { id: "F-004", name: "Dewi Lestari", location: "Garut, West Java", joinedDate: "2024-02-10", totalBatches: 24, averageGrade: "Grade C", rejectionRate: 12.5, recentActivity: "Submitted 1 batch last week" },
-  { id: "F-005", name: "Agus Prasetyo", location: "Kediri, East Java", joinedDate: "2023-08-19", totalBatches: 56, averageGrade: "Grade B", rejectionRate: 4.8, recentActivity: "Submitted 3 batches yesterday" },
-];
-
 export default function FarmersTab() {
   const [query, setQuery] = useState("");
+  const [farmersList, setFarmersList] = useState<any[]>([]);
   const [selectedFarmer, setSelectedFarmer] = useState<FarmerProfile | null>(null);
 
-  const filteredFarmers = MOCK_FARMERS.filter(f => 
+  useEffect(() => {
+    async function fetchFarmers() {
+      const { data } = await supabase.from('farmers').select('*');
+      if (data) setFarmersList(data);
+    }
+    fetchFarmers();
+  }, []);
+
+  const handleSelectFarmer = async (farmer: any) => {
+    // Fetch stats for the selected farmer
+    const { data: scans } = await supabase.from('scans').select('*').eq('farmer_id', farmer.id).order('created_at', { ascending: false });
+    
+    let totalBatches = 0;
+    let avgGrade = "N/A";
+    let rejectionRate = 0;
+    let recentActivity = "No recent activity";
+    
+    if (scans && scans.length > 0) {
+      totalBatches = scans.length;
+      
+      const gradeA = scans.filter(s => s.overall_grade === 'Grade A').length;
+      const rejects = scans.filter(s => s.overall_grade === 'Reject').length;
+      
+      rejectionRate = Number(((rejects / totalBatches) * 100).toFixed(1));
+      
+      // Super simple logic for avg grade for demo
+      if (gradeA > (totalBatches / 2)) avgGrade = "Grade A";
+      else if (rejects > (totalBatches / 2)) avgGrade = "Reject";
+      else avgGrade = "Grade B";
+      
+      const lastScanDate = new Date(scans[0].created_at);
+      recentActivity = `Submitted batch ${scans[0].batch_id} on ${lastScanDate.toLocaleDateString()}`;
+    }
+
+    setSelectedFarmer({
+      id: farmer.id,
+      name: farmer.name,
+      location: farmer.location,
+      joinedDate: new Date(farmer.joined_date || farmer.created_at).toISOString().split('T')[0],
+      totalBatches,
+      averageGrade: avgGrade,
+      rejectionRate,
+      recentActivity
+    });
+  };
+
+  const filteredFarmers = farmersList.filter(f => 
     f.name.toLowerCase().includes(query.toLowerCase()) || 
     f.id.toLowerCase().includes(query.toLowerCase())
   );
@@ -51,16 +91,15 @@ export default function FarmersTab() {
           {filteredFarmers.map(farmer => (
             <button
               key={farmer.id}
-              onClick={() => setSelectedFarmer(farmer)}
+              onClick={() => handleSelectFarmer(farmer)}
               className={`w-full text-left p-4 border-b border-border transition-colors hover:bg-secondary/50 ${
                 selectedFarmer?.id === farmer.id ? "bg-primary/5 border-l-2 border-l-primary" : ""
               }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="font-bold text-sm text-foreground">{farmer.name}</span>
-                <span className="font-mono text-[10px] text-muted-foreground">{farmer.id}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
                 <MapPin className="w-3 h-3" />
                 <span className="truncate">{farmer.location}</span>
               </div>
@@ -95,7 +134,7 @@ export default function FarmersTab() {
                     </div>
                     <div>
                       <h2 className="text-xl font-bold tracking-tighter text-foreground">{selectedFarmer.name}</h2>
-                      <p className="font-mono text-xs text-primary">{selectedFarmer.id}</p>
+                      <p className="font-mono text-xs text-primary max-w-xs truncate">{selectedFarmer.id}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
@@ -126,7 +165,8 @@ export default function FarmersTab() {
                   <span className={`text-2xl font-mono font-bold ${
                     selectedFarmer.averageGrade === "Grade A" ? "text-green-400" :
                     selectedFarmer.averageGrade === "Grade B" ? "text-blue-400" :
-                    "text-orange-400"
+                    selectedFarmer.averageGrade === "Reject" ? "text-destructive" :
+                    "text-foreground"
                   }`}>{selectedFarmer.averageGrade}</span>
                 </div>
                 <div className="border border-border p-4 bg-secondary/20 md:col-span-2">
@@ -160,18 +200,6 @@ export default function FarmersTab() {
                     <button className="text-[10px] uppercase tracking-widest text-primary border border-primary/30 px-3 py-1 hover:bg-primary/10 transition-colors">
                       View Log
                     </button>
-                  </div>
-                  {/* Mock additional historical rows */}
-                  <div className="p-4 flex items-center justify-between hover:bg-secondary/30 transition-colors opacity-70">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center">
-                        <Package className="w-4 h-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-foreground font-medium">Submitted 4 batches</p>
-                        <p className="text-xs text-muted-foreground">1 week ago</p>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>

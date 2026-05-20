@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Lock, AlertTriangle } from "lucide-react";
-
-const MOCK_CREDENTIALS = { username: "admin", password: "agritrust2024" };
+import { Lock, AlertTriangle, Loader2 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 interface AdminLoginGateProps {
   children: React.ReactNode;
@@ -13,16 +12,52 @@ export default function AdminLoginGate({ children }: AdminLoginGateProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    // Check active session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setAuthenticated(true);
+      setIsLoading(false);
+    });
+
+    // Listen for auth changes (like logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username === MOCK_CREDENTIALS.username && password === MOCK_CREDENTIALS.password) {
-      setAuthenticated(true);
-      setError(false);
-    } else {
+    setIsLoading(true);
+    setError(false);
+
+    try {
+      const { data, error: sbError } = await supabase.auth.signInWithPassword({
+        email: username,
+        password: password,
+      });
+
+      if (sbError || !data.session) {
+        setError(true);
+      }
+    } catch (err) {
+      console.error(err);
       setError(true);
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  if (isLoading && !authenticated) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (authenticated) {
     return <>{children}</>;
@@ -59,12 +94,12 @@ export default function AdminLoginGate({ children }: AdminLoginGateProps) {
           )}
 
           <div>
-            <label className="data-label block mb-1.5">Username</label>
+            <label className="data-label block mb-1.5">Email / Username</label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Enter username"
+              placeholder="Enter admin email"
               className="w-full bg-background border border-border p-3 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
             />
           </div>
@@ -80,12 +115,12 @@ export default function AdminLoginGate({ children }: AdminLoginGateProps) {
             />
           </div>
 
-          <button type="submit" className="btn-rugged w-full">
-            Authenticate
+          <button type="submit" disabled={isLoading} className="btn-rugged w-full flex items-center justify-center gap-2 disabled:opacity-50">
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Authenticate"}
           </button>
 
           <p className="text-[9px] uppercase tracking-widest text-muted-foreground text-center">
-            Demo: admin / agritrust2024
+            Secured via Supabase
           </p>
         </form>
       </motion.div>

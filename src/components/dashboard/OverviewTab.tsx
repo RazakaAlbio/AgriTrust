@@ -1,38 +1,8 @@
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Activity, ShieldCheck, TrendingDown, Clock, AlertTriangle, Info, CheckCircle2, Server, Globe, Database, Network } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Legend, AreaChart, Area } from "recharts";
-
-const KPI = [
-  { label: "Active Farmers", value: "24",     icon: Activity },
-  { label: "Total Scanned",  value: "1,247",  icon: Database },
-  { label: "Grade A Rate",   value: "68.2%",  icon: ShieldCheck, accent: true },
-  { label: "Reject Rate",    value: "5.8%",   icon: TrendingDown, warning: true },
-];
-
-const SYSTEM_HEALTH = [
-  { label: "Edge-AI Nodes", status: "Operational", ping: "12ms", icon: Server },
-  { label: "Blockchain Sync", status: "Synced", ping: "45ms", icon: Network },
-  { label: "Cloud Database", status: "Online", ping: "22ms", icon: Globe },
-];
-
-const CHART_DATA = [
-  { day: "Mon", gradeA: 14, gradeB: 5, gradeC: 3, reject: 1 },
-  { day: "Tue", gradeA: 18, gradeB: 4, gradeC: 2, reject: 2 },
-  { day: "Wed", gradeA: 12, gradeB: 6, gradeC: 4, reject: 3 },
-  { day: "Thu", gradeA: 20, gradeB: 3, gradeC: 2, reject: 1 },
-  { day: "Fri", gradeA: 16, gradeB: 5, gradeC: 3, reject: 2 },
-  { day: "Sat", gradeA: 22, gradeB: 4, gradeC: 1, reject: 0 },
-  { day: "Sun", gradeA: 15, gradeB: 6, gradeC: 3, reject: 1 },
-];
-
-const YIELD_DATA = [
-  { time: "08:00", volume: 120 },
-  { time: "10:00", volume: 210 },
-  { time: "12:00", volume: 180 },
-  { time: "14:00", volume: 340 },
-  { time: "16:00", volume: 290 },
-  { time: "18:00", volume: 150 },
-];
+import { supabase } from "@/lib/supabase";
 
 const COLORS = {
   gradeA: "hsl(142 71% 45%)",
@@ -50,6 +20,76 @@ const stagger = {
 };
 
 export default function OverviewTab() {
+  const [stats, setStats] = useState({
+    activeFarmers: 0,
+    totalScanned: 0,
+    gradeARate: "0%",
+    rejectRate: "0%"
+  });
+  
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
+  
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        // Fetch Farmers count
+        const { count: farmersCount } = await supabase.from('farmers').select('*', { count: 'exact', head: true });
+        
+        // Fetch Scans for stats & charts
+        const { data: scans } = await supabase.from('scans').select('*');
+        
+        // Fetch Devices
+        const { data: devs } = await supabase.from('devices').select('*');
+        
+        if (scans && scans.length > 0) {
+          const total = scans.length;
+          const gradeA = scans.filter(s => s.overall_grade === 'Grade A').length;
+          const reject = scans.filter(s => s.overall_grade === 'Reject').length;
+          
+          setStats({
+            activeFarmers: farmersCount || 0,
+            totalScanned: total,
+            gradeARate: ((gradeA / total) * 100).toFixed(1) + "%",
+            rejectRate: ((reject / total) * 100).toFixed(1) + "%",
+          });
+          
+          // Group by day for the chart (very basic grouping by date string)
+          const grouped: Record<string, any> = {};
+          scans.forEach(s => {
+            const date = new Date(s.created_at).toLocaleDateString('en-US', { weekday: 'short' });
+            if (!grouped[date]) grouped[date] = { day: date, gradeA: 0, gradeB: 0, gradeC: 0, reject: 0 };
+            
+            if (s.overall_grade === 'Grade A') grouped[date].gradeA++;
+            else if (s.overall_grade === 'Grade B') grouped[date].gradeB++;
+            else if (s.overall_grade === 'Grade C') grouped[date].gradeC++;
+            else if (s.overall_grade === 'Reject') grouped[date].reject++;
+          });
+          
+          setChartData(Object.values(grouped));
+        } else {
+          setStats({ activeFarmers: farmersCount || 0, totalScanned: 0, gradeARate: "0%", rejectRate: "0%" });
+          setChartData([]);
+        }
+        
+        if (devs) {
+          setDevices(devs);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    
+    fetchData();
+  }, []);
+
+  const KPI = [
+    { label: "Active Farmers", value: stats.activeFarmers.toString(), icon: Activity },
+    { label: "Total Scanned",  value: stats.totalScanned.toString(),  icon: Database },
+    { label: "Grade A Rate",   value: stats.gradeARate,  icon: ShieldCheck, accent: true },
+    { label: "Reject Rate",    value: stats.rejectRate,   icon: TrendingDown, warning: true },
+  ];
+
   return (
     <div className="space-y-4">
       
@@ -108,7 +148,7 @@ export default function OverviewTab() {
               </div>
               <div className="p-4 h-56">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={CHART_DATA} barSize={12}>
+                  <BarChart data={chartData} barSize={12}>
                     <CartesianGrid stroke="hsl(0 0% 15%)" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="day" tick={{ fill: "hsl(0 0% 60%)", fontSize: 10, fontFamily: "monospace" }} axisLine={{ stroke: "hsl(0 0% 20%)" }} tickLine={false} />
                     <Tooltip cursor={{ fill: 'hsl(0 0% 15%)' }} contentStyle={{ background: "hsl(0 0% 8%)", border: "1px solid hsl(0 0% 20%)", borderRadius: 0, fontFamily: "monospace", fontSize: 11 }} />
@@ -129,7 +169,15 @@ export default function OverviewTab() {
               </div>
               <div className="p-4 h-56">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={YIELD_DATA}>
+                  {/* Keeping mock data for Yield Data for now to maintain visual integrity as it's time-series based */}
+                  <AreaChart data={[
+                    { time: "08:00", volume: 12 },
+                    { time: "10:00", volume: 21 },
+                    { time: "12:00", volume: 18 },
+                    { time: "14:00", volume: 34 },
+                    { time: "16:00", volume: 29 },
+                    { time: "18:00", volume: 15 },
+                  ]}>
                     <defs>
                       <linearGradient id="colorVol" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
@@ -155,18 +203,21 @@ export default function OverviewTab() {
               <p className="data-label !mb-0">System Health</p>
             </div>
             <div className="divide-y divide-border">
-              {SYSTEM_HEALTH.map((sys) => (
-                <div key={sys.label} className="p-3 flex items-center justify-between">
+              {devices.map((sys) => (
+                <div key={sys.id} className="p-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <sys.icon className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium text-foreground">{sys.label}</span>
+                    <Server className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-foreground">{sys.device_name}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="status-dot status-dot-synced" />
-                    <span className="text-xs font-mono text-muted-foreground">{sys.ping}</span>
+                    <span className={`status-dot ${sys.status === 'online' ? 'status-dot-synced' : 'bg-destructive shadow-[0_0_8px_rgba(var(--destructive-rgb),0.8)]'}`} />
+                    <span className="text-xs font-mono text-muted-foreground uppercase">{sys.device_type}</span>
                   </div>
                 </div>
               ))}
+              {devices.length === 0 && (
+                <div className="p-3 text-xs text-muted-foreground">No devices registered.</div>
+              )}
             </div>
           </motion.div>
 

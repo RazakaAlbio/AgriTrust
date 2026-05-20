@@ -1,24 +1,22 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { UserPlus, CreditCard, Server, Wifi, WifiOff, Loader2 } from "lucide-react";
-
-const DEVICES = [
-  { name: "JETSON_NANO_01", status: "ONLINE", ping: "12ms", type: "primary" },
-  { name: "ESP32_NODE_01", status: "ONLINE", ping: "8ms", type: "sensor" },
-  { name: "ESP32_NODE_02", status: "SYNCING", ping: "—", type: "sensor" },
-  { name: "ESP32_NODE_03", status: "ONLINE", ping: "15ms", type: "sensor" },
-  { name: "ESP32_NODE_04", status: "OFFLINE", ping: "—", type: "sensor" },
-];
-
-const RFID_LINKS = [
-  { hex: "0x4A:2F:8C:D1", user: "Ahmad Rizal", linked: true },
-  { hex: "0x7B:3E:9A:F2", user: "Siti Nurhaliza", linked: true },
-  { hex: "0x1C:5D:4E:B3", user: "—", linked: false },
-];
+import { UserPlus, CreditCard, Server, Wifi, WifiOff, Loader2, CheckCircle2, LogOut } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { useNavigate } from "react-router-dom";
 
 export default function AdminPanel() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"register" | "rfid" | "devices">("register");
-  const [form, setForm] = useState({ name: "", nim: "", group: "", role: "farmer" });
+  
+  // Register Form State
+  const [form, setForm] = useState({ name: "", rfid_tag: "", location: "", group_class: "" });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState("");
+
+  // Data State
+  const [devices, setDevices] = useState<any[]>([]);
+  const [farmers, setFarmers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const tabs = [
     { id: "register" as const, label: "Register", icon: UserPlus },
@@ -26,16 +24,89 @@ export default function AdminPanel() {
     { id: "devices" as const, label: "Devices", icon: Server },
   ];
 
+  useEffect(() => {
+    async function fetchData() {
+      setIsLoading(true);
+      const [devRes, farmRes] = await Promise.all([
+        supabase.from('devices').select('*'),
+        supabase.from('farmers').select('*')
+      ]);
+      
+      if (devRes.data) setDevices(devRes.data);
+      if (farmRes.data) setFarmers(farmRes.data);
+      
+      setIsLoading(false);
+    }
+    
+    fetchData();
+  }, [activeTab]); // Refetch when changing tabs
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setSuccessMsg("");
+    
+    const { error } = await supabase.from('farmers').insert([form]);
+    
+    setIsSubmitting(false);
+    if (!error) {
+      setSuccessMsg("Farmer registered successfully!");
+      setForm({ name: "", rfid_tag: "", location: "", group_class: "" });
+      setTimeout(() => setSuccessMsg(""), 3000);
+      
+      // Refresh list
+      const { data } = await supabase.from('farmers').select('*');
+      if (data) setFarmers(data);
+    } else {
+      console.error(error);
+      alert("Failed to register farmer.");
+    }
+  };
+
+  const handleDeleteFarmer = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this farmer? This action cannot be undone.")) return;
+    
+    const { error } = await supabase.from('farmers').delete().eq('id', id);
+    if (!error) {
+      setFarmers(farmers.filter(f => f.id !== id));
+    } else {
+      alert("Failed to delete farmer.");
+    }
+  };
+
+  const handleRevokeRfid = async (id: string) => {
+    if (!confirm("Revoke this RFID tag? The farmer will not be able to scan.")) return;
+
+    const { error } = await supabase.from('farmers').update({ rfid_tag: null }).eq('id', id);
+    if (!error) {
+      setFarmers(farmers.map(f => f.id === id ? { ...f, rfid_tag: null } : f));
+    } else {
+      alert("Failed to revoke RFID.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="border-b border-border p-4">
-        <h1 className="font-mono text-lg font-bold tracking-tighter text-foreground">
-          ADMIN_PANEL
-        </h1>
-        <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">
-          System Management · Protected Access
-        </p>
+      <div className="border-b border-border p-4 flex items-center justify-between">
+        <div>
+          <h1 className="font-mono text-lg font-bold tracking-tighter text-foreground">
+            ADMIN_PANEL
+          </h1>
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">
+            System Management · Protected Access
+          </p>
+        </div>
+        <button 
+          onClick={async () => {
+            await supabase.auth.signOut();
+            navigate("/");
+          }}
+          className="flex items-center gap-2 px-4 py-2 border border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors text-sm font-mono"
+        >
+          <LogOut className="w-4 h-4" />
+          <span className="hidden sm:inline">Logout</span>
+        </button>
       </div>
 
       <div className="max-w-4xl mx-auto p-4 space-y-0">
@@ -58,121 +129,145 @@ export default function AdminPanel() {
         </div>
 
         {/* Tab Content */}
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3, ease: [0.2, 1, 0.3, 1] }}
-          className="border border-border border-t-0"
-        >
+        <div className="border border-t-0 border-border bg-background p-6">
           {activeTab === "register" && (
-            <div className="p-6 space-y-4">
-              <p className="data-label">Register New Farmer</p>
-              {[
-                { label: "Full Name", key: "name", placeholder: "e.g. Ahmad Rizal" },
-                { label: "NIM / ID Number", key: "nim", placeholder: "e.g. 2024001" },
-                { label: "Class / Group", key: "group", placeholder: "e.g. Group A" },
-              ].map((field) => (
-                <div key={field.key}>
-                  <label className="data-label block mb-1.5">{field.label}</label>
-                  <input
-                    type="text"
-                    placeholder={field.placeholder}
-                    value={form[field.key as keyof typeof form]}
-                    onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
-                    className="w-full bg-background border border-border p-3 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
-                  />
-                </div>
-              ))}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
               <div>
-                <label className="data-label block mb-1.5">Role</label>
-                <select
-                  value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value })}
-                  className="w-full bg-background border border-border p-3 font-mono text-sm text-foreground focus:outline-none focus:border-primary transition-colors"
-                >
-                  <option value="farmer">Farmer</option>
-                  <option value="supervisor">Supervisor</option>
-                  <option value="admin">Admin</option>
-                </select>
+                <h2 className="text-sm font-bold text-foreground">Register Farmer</h2>
+                <p className="text-xs text-muted-foreground">Add a new farmer and link their RFID tag.</p>
               </div>
-              <button className="btn-rugged w-full mt-2">
-                Register User
-              </button>
-            </div>
+
+              {successMsg && (
+                <div className="p-3 bg-green-500/10 border border-green-500/30 flex items-center gap-2 text-green-500">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">{successMsg}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleRegister} className="space-y-4 max-w-md">
+                <div>
+                  <label className="data-label block mb-1.5">Full Name</label>
+                  <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required className="w-full bg-secondary/50 border border-border p-2.5 font-mono text-sm focus:outline-none focus:border-primary text-foreground" />
+                </div>
+                <div>
+                  <label className="data-label block mb-1.5">RFID Tag (Hex)</label>
+                  <input type="text" value={form.rfid_tag} onChange={e => setForm({...form, rfid_tag: e.target.value})} required placeholder="e.g. 0x4A:2F:8C:D1" className="w-full bg-secondary/50 border border-border p-2.5 font-mono text-sm focus:outline-none focus:border-primary text-foreground uppercase" />
+                </div>
+                <div>
+                  <label className="data-label block mb-1.5">Location</label>
+                  <input type="text" value={form.location} onChange={e => setForm({...form, location: e.target.value})} required placeholder="e.g. Bandung, West Java" className="w-full bg-secondary/50 border border-border p-2.5 font-mono text-sm focus:outline-none focus:border-primary text-foreground" />
+                </div>
+                <div>
+                  <label className="data-label block mb-1.5">Group / Class</label>
+                  <input type="text" value={form.group_class} onChange={e => setForm({...form, group_class: e.target.value})} className="w-full bg-secondary/50 border border-border p-2.5 font-mono text-sm focus:outline-none focus:border-primary text-foreground" />
+                </div>
+                <button type="submit" disabled={isSubmitting} className="btn-rugged w-full mt-4 flex items-center justify-center gap-2">
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register Profile"}
+                </button>
+              </form>
+            </motion.div>
           )}
 
           {activeTab === "rfid" && (
-            <div>
-              <div className="p-4 border-b border-border">
-                <p className="data-label !mb-0">RFID Tag Assignment</p>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+              <div>
+                <h2 className="text-sm font-bold text-foreground">RFID Database</h2>
+                <p className="text-xs text-muted-foreground">Manage linked hardware tokens.</p>
               </div>
-              {/* Scan zone */}
-              <div className="p-6 border-b border-border flex flex-col items-center justify-center gap-3">
-                <div className="relative w-40 h-24 border-2 border-dashed border-border flex items-center justify-center overflow-hidden">
-                  <CreditCard className="w-10 h-10 text-muted-foreground" />
-                  <div className="absolute left-0 right-0 h-0.5 bg-primary animate-scan-line" />
+
+              {isLoading ? (
+                <div className="text-sm text-muted-foreground animate-pulse">Loading farmers...</div>
+              ) : (
+                <div className="border border-border">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-secondary/30 border-b border-border">
+                        <th className="p-3 text-[10px] uppercase tracking-widest text-muted-foreground">RFID HEX</th>
+                        <th className="p-3 text-[10px] uppercase tracking-widest text-muted-foreground">Linked User</th>
+                        <th className="p-3 text-[10px] uppercase tracking-widest text-muted-foreground">Status</th>
+                        <th className="p-3 text-[10px] uppercase tracking-widest text-muted-foreground text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {farmers.map((farmer, i) => (
+                        <tr key={i} className="hover:bg-secondary/10">
+                          <td className="p-3 font-mono text-sm text-primary">{farmer.rfid_tag || "UNASSIGNED"}</td>
+                          <td className="p-3 text-sm text-foreground">{farmer.name}</td>
+                          <td className="p-3">
+                            {farmer.rfid_tag ? (
+                              <span className="text-[10px] uppercase tracking-widest font-bold text-green-500 border border-green-500/30 bg-green-500/10 px-2 py-0.5">Linked</span>
+                            ) : (
+                              <span className="text-[10px] uppercase tracking-widest font-bold text-orange-500 border border-orange-500/30 bg-orange-500/10 px-2 py-0.5">No Tag</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right space-x-2">
+                            {farmer.rfid_tag && (
+                              <button onClick={() => handleRevokeRfid(farmer.id)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-orange-500 border border-border hover:border-orange-500/50 px-2 py-1 transition-colors">
+                                Revoke
+                              </button>
+                            )}
+                            <button onClick={() => handleDeleteFarmer(farmer.id)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-destructive border border-border hover:border-destructive/50 px-2 py-1 transition-colors">
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <p className="text-[10px] uppercase tracking-widest text-primary font-bold">
-                  Awaiting RFID Tag...
-                </p>
-              </div>
-              {/* Linked tags */}
-              {RFID_LINKS.map((link) => (
-                <div key={link.hex} className="p-4 border-b border-border last:border-b-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-                  <div className="flex items-center gap-3">
-                    <CreditCard className={`w-4 h-4 ${link.linked ? "text-success" : "text-muted-foreground"}`} />
-                    <div>
-                      <p className="font-mono text-sm font-bold text-foreground">{link.hex}</p>
-                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                        {link.linked ? link.user : "Unassigned"}
-                      </p>
-                    </div>
-                  </div>
-                  <span className={`text-[10px] uppercase tracking-widest font-bold ${
-                    link.linked ? "text-success" : "text-primary"
-                  }`}>
-                    {link.linked ? "Linked" : "Assign"}
-                  </span>
-                </div>
-              ))}
-            </div>
+              )}
+            </motion.div>
           )}
 
           {activeTab === "devices" && (
-            <div>
-              <div className="p-4 border-b border-border">
-                <p className="data-label !mb-0">Device Network Status</p>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+              <div>
+                <h2 className="text-sm font-bold text-foreground">Edge Devices</h2>
+                <p className="text-xs text-muted-foreground">Real-time status of compute nodes.</p>
               </div>
-              <div className="bg-background font-mono text-sm">
-                {DEVICES.map((device) => (
-                  <div key={device.name} className="p-4 border-b border-border last:border-b-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-                    <div className="flex items-center gap-3">
-                      {device.status === "ONLINE" && <Wifi className="w-4 h-4 text-success" />}
-                      {device.status === "SYNCING" && <Loader2 className="w-4 h-4 text-primary animate-spin" />}
-                      {device.status === "OFFLINE" && <WifiOff className="w-4 h-4 text-destructive" />}
-                      <span className="text-foreground font-bold">{device.name}</span>
+
+              {isLoading ? (
+                <div className="text-sm text-muted-foreground animate-pulse">Loading devices...</div>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {devices.map((dev, i) => {
+                    const isOnline = dev.status === "online";
+                    return (
+                      <div key={i} className={`border p-4 ${isOnline ? "border-primary/50 bg-primary/5" : "border-border bg-secondary/20"}`}>
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            {isOnline ? <Wifi className="w-4 h-4 text-primary" /> : <WifiOff className="w-4 h-4 text-muted-foreground" />}
+                            <span className="font-mono text-sm font-bold text-foreground">{dev.device_name}</span>
+                          </div>
+                          <span className={`text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 border ${
+                            isOnline ? "text-primary border-primary/30" : "text-muted-foreground border-border"
+                          }`}>
+                            {dev.status}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <span className="text-muted-foreground block mb-0.5">Type</span>
+                            <span className="font-mono text-foreground uppercase">{dev.device_type}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block mb-0.5">Last Ping</span>
+                            <span className="font-mono text-foreground">{dev.last_ping ? new Date(dev.last_ping).toLocaleTimeString() : 'Never'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {devices.length === 0 && (
+                    <div className="col-span-2 p-8 text-center border border-dashed border-border text-muted-foreground text-sm">
+                      No devices connected.
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className={`text-xs font-bold uppercase tracking-wider ${
-                        device.status === "ONLINE" ? "text-success" :
-                        device.status === "SYNCING" ? "text-primary" :
-                        "text-destructive"
-                      }`}>
-                        {device.status}
-                      </span>
-                      {device.ping !== "—" && (
-                        <span className="text-muted-foreground text-xs">
-                          Ping: {device.ping}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
           )}
-        </motion.div>
+        </div>
       </div>
     </div>
   );

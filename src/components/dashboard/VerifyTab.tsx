@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, ShieldCheck, ShieldX, Copy, ExternalLink, AlertTriangle, Scale, Wind, Microscope, User, Calendar, MapPin, QrCode, X } from "lucide-react";
+import { Search, ShieldCheck, ShieldX, Copy, ExternalLink, AlertTriangle, Scale, Wind, Microscope, User, Calendar, MapPin, QrCode, X, CheckCircle2 } from "lucide-react";
 import { type AIClass, type Grade, getGradeInfo, buildTxUrl } from "@/lib/grading";
+import { supabase } from "@/lib/supabase";
 
 interface Detection { aiClass: AIClass; confidence: number; count: number; }
 interface ScanRecord {
   batchId: string; timestamp: string; detections: Detection[];
   overallGrade: Grade; sensors: { weight: { value: string; ok: boolean }; gas_ppm: { value: string; ok: boolean } };
   txHash?: string; farmer: string; harvestDate: string; location: string;
+  imageUrl?: string;
 }
 
 const DEMO_BATCHES: Record<string, ScanRecord> = {
@@ -21,6 +23,7 @@ const DEMO_BATCHES: Record<string, ScanRecord> = {
     overallGrade: "Reject",
     sensors: { weight: { value: "1.24 kg", ok: true }, gas_ppm: { value: "142 ppm", ok: true } },
     farmer: "Ahmad Rizal", harvestDate: "2024-12-15", location: "Bandung, West Java",
+    imageUrl: "https://images.unsplash.com/photo-1595858603623-86873531b7f0?q=80&w=400&auto=format&fit=crop"
   },
   "BATCH_2024_0846": {
     batchId: "BATCH_2024_0846", timestamp: "Dec 15, 2024 · 13:45 UTC",
@@ -28,6 +31,7 @@ const DEMO_BATCHES: Record<string, ScanRecord> = {
     overallGrade: "Grade A",
     sensors: { weight: { value: "1.18 kg", ok: true }, gas_ppm: { value: "98 ppm", ok: true } },
     farmer: "Ahmad Rizal", harvestDate: "2024-12-15", location: "Bandung, West Java",
+    imageUrl: "https://images.unsplash.com/photo-1595858603623-86873531b7f0?q=80&w=400&auto=format&fit=crop"
   },
 };
 
@@ -39,11 +43,65 @@ export default function VerifyTab() {
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
 
-  const handleSearch = () => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSearch = async () => {
     const q = query.trim().toUpperCase();
-    const found = DEMO_BATCHES[q] ?? Object.values(DEMO_BATCHES).find(b => b.batchId.includes(q));
-    if (found) { setResult(found); setNotFound(false); setShowQRScanner(false); }
-    else { setResult(null); setNotFound(true); }
+    if (!q) return;
+
+    setIsLoading(true);
+    setNotFound(false);
+    setResult(null);
+
+    try {
+      const { data, error } = await supabase
+        .from('scans')
+        .select(`
+          batch_id, 
+          created_at, 
+          overall_grade, 
+          weight_kg, 
+          gas_ppm, 
+          ai_detections, 
+          image_url, 
+          tx_hash,
+          farmers (name, location)
+        `)
+        .eq('batch_id', q)
+        .single();
+
+      if (error || !data) {
+        // Fallback to demo data if Supabase fails (e.g. testing locally without DB)
+        const found = DEMO_BATCHES[q] ?? Object.values(DEMO_BATCHES).find(b => b.batchId.includes(q));
+        if (found) { setResult(found); setNotFound(false); setShowQRScanner(false); }
+        else { setResult(null); setNotFound(true); }
+      } else {
+        // Map Supabase response to ScanRecord interface
+        const record: ScanRecord = {
+          batchId: data.batch_id,
+          timestamp: new Date(data.created_at).toLocaleString(),
+          detections: data.ai_detections as Detection[],
+          overallGrade: data.overall_grade as Grade,
+          sensors: {
+            weight: { value: `${data.weight_kg} kg`, ok: true },
+            gas_ppm: { value: `${data.gas_ppm} ppm`, ok: true }
+          },
+          txHash: data.tx_hash,
+          farmer: (data.farmers as any)?.name || "Unknown",
+          harvestDate: new Date(data.created_at).toISOString().split('T')[0],
+          location: (data.farmers as any)?.location || "Unknown",
+          imageUrl: data.image_url
+        };
+        setResult(record);
+        setNotFound(false);
+        setShowQRScanner(false);
+      }
+    } catch (err) {
+      console.error(err);
+      setNotFound(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const copyHash = () => {
@@ -87,8 +145,8 @@ export default function VerifyTab() {
             />
           </div>
           <div className="flex gap-2">
-            <button onClick={handleSearch} className="btn-rugged flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-6 py-2 text-sm">
-              Verify
+            <button onClick={handleSearch} disabled={isLoading} className="btn-rugged flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-6 py-2 text-sm disabled:opacity-50">
+              {isLoading ? "Searching..." : "Verify"}
             </button>
             <button 
               onClick={() => setShowQRScanner(!showQRScanner)}
@@ -179,8 +237,19 @@ export default function VerifyTab() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
-              {/* Left Col: Detections */}
+              {/* Left Col: Image & Detections */}
               <div>
+                {result.imageUrl && (
+                  <div className="border-b border-border p-4 bg-secondary/5">
+                    <p className="data-label mb-2">Scan Snapshot</p>
+                    <div className="relative aspect-video rounded overflow-hidden border border-border">
+                      <img src={result.imageUrl} alt="Commodity scan" className="w-full h-full object-cover" />
+                      <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-[10px] font-mono text-white flex items-center gap-1.5">
+                        <Microscope className="w-3 h-3 text-primary" /> AI Verified
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="p-4 border-b border-border flex items-center gap-2 bg-secondary/10">
                   <Microscope className="w-4 h-4 text-muted-foreground" />
                   <p className="data-label !mb-0">AI Detections</p>
