@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--weights", type=str,
-        default=str(PROJECT_ROOT / "runs" / "agritrust_v1" / "weights" / "best.pt"),
+        default=str(PROJECT_ROOT / "runs" / "agritrust_v3" / "weights" / "best.pt"),
         help="Path to trained YOLOv8 .pt weights"
     )
     parser.add_argument(

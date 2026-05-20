@@ -26,8 +26,10 @@ dist-ssr
 # Python — AI/ML pipeline
 runs/detect/val
 runs/detect
-runs
+runs/
+python/tests/output/
 python/runs/
+python/exports/
 python/outputs/
 python/dataset/
 python/__pycache__/

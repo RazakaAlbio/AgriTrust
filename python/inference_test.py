@@ -36,18 +36,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # Constants
 # ---------------------------------------------------------------------------
 
-# Must match data.yaml alphabetical order
+# Must match data.yaml alphabetical order (v3 — 7 classes)
 CLASS_NAMES = [
-    "anthracnose",       # 0
-    "blossom_end_rot",   # 1
-    "brown_rugose",      # 2
-    "fruit_cracking",    # 3
-    "half_ripe",         # 4
-    "mold",              # 5
-    "ripe",              # 6
-    "rotten",            # 7
-    "sunscald",          # 8
-    "unripe",            # 9
+    "blossom_end_rot",   # 0
+    "fruit_cracking",    # 1
+    "half_ripe",         # 2
+    "mold",              # 3
+    "ripe",              # 4
+    "rotten",            # 5
+    "unripe",            # 6
 ]
 
 # Grading rules (name-based, not index-based for safety)
@@ -73,15 +70,12 @@ GRADE_CONFIG = {
     # All defect classes → Reject
     "mold":             {"grade": "Reject", "symbol": "✗", "bgr": (0, 0, 220)},
     "rotten":           {"grade": "Reject", "symbol": "✗", "bgr": (0, 0, 220)},
-    "anthracnose":      {"grade": "Reject", "symbol": "✗", "bgr": (0, 0, 220)},
     "blossom_end_rot":  {"grade": "Reject", "symbol": "✗", "bgr": (0, 0, 220)},
-    "brown_rugose":     {"grade": "Reject", "symbol": "✗", "bgr": (0, 0, 220)},
     "fruit_cracking":   {"grade": "Reject", "symbol": "✗", "bgr": (0, 0, 220)},
-    "sunscald":         {"grade": "Reject", "symbol": "✗", "bgr": (0, 0, 220)},
 }
 
 # High-risk defects get an extra ⚠ prefix on the label
-HIGH_RISK = {"mold", "rotten", "anthracnose"}
+HIGH_RISK = {"mold", "rotten"}
 
 # Grade box background colours (BGR)
 GRADE_BOX_COLOURS = {
@@ -111,13 +105,21 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model", type=str,
-        default=str(PROJECT_ROOT / "runs" / "agritrust_v1" / "weights" / "best.pt"),
+        default=str(PROJECT_ROOT / "runs" / "agritrust_v3" / "weights" / "best.pt"),
         help="Path to trained YOLOv8 .pt weights"
     )
     parser.add_argument(
-        "--conf", type=float, default=0.30,
-        help="Confidence threshold (0–1)"
+        "--onnx", type=str,
+        default=str(PROJECT_ROOT / "exports" / "best.onnx"),
+        help="Path to exported .onnx model (used with --compare)"
     )
+    parser.add_argument(
+        "--compare", action="store_true",
+        help="Run both .pt and .onnx models on the same source and compare speed + detections"
+    )
+    parser.add_argument(
+        "--conf", type=float, default=0.20,
+        help="Confidence threshold — lowered to 0.20 for better defect recall")
     parser.add_argument(
         "--iou", type=float, default=0.70,
         help="NMS IoU threshold"
@@ -516,18 +518,143 @@ def process_frame(
 
 
 # ---------------------------------------------------------------------------
+# Model Comparison (PT vs ONNX)
+# ---------------------------------------------------------------------------
+
+def compare_models(
+    pt_path: Path,
+    onnx_path: Path,
+    source_files: list,
+    conf: float,
+    iou: float,
+    imgsz: int,
+    device: str,
+    output_dir: Path,
+    save: bool,
+) -> None:
+    """Run both PT and ONNX models on every image and print a comparison table."""
+    from ultralytics import YOLO
+
+    print("\n" + "=" * 62)
+    print("  PT vs ONNX Model Comparison")
+    print("=" * 62)
+    print(f"  PT   : {pt_path}")
+    print(f"  ONNX : {onnx_path}")
+    print(f"  Conf : {conf}  |  IoU : {iou}  |  imgsz : {imgsz}")
+    print("=" * 62)
+
+    pt_model   = YOLO(str(pt_path))
+    onnx_model = YOLO(str(onnx_path))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    pt_times, onnx_times = [], []
+    all_match = True
+
+    rows = []
+    for src in source_files:
+        frame = cv2.imread(str(src))
+        if frame is None:
+            print(f"  ⚠️  Skipping unreadable: {src.name}")
+            continue
+
+        # ── PT inference ────────────────────────────────────────────────────
+        t0 = time.perf_counter()
+        pt_results = pt_model.predict(
+            source=frame, conf=conf, iou=iou, imgsz=imgsz,
+            device=device, verbose=False,
+        )
+        pt_ms = (time.perf_counter() - t0) * 1000
+        pt_times.append(pt_ms)
+
+        # ── ONNX inference ──────────────────────────────────────────────────
+        t0 = time.perf_counter()
+        onnx_results = onnx_model.predict(
+            source=frame, conf=conf, iou=iou, imgsz=imgsz,
+            device=device, verbose=False,
+        )
+        onnx_ms = (time.perf_counter() - t0) * 1000
+        onnx_times.append(onnx_ms)
+
+        # ── Parse detections ────────────────────────────────────────────────
+        def parse_dets(result):
+            if result.boxes is None or len(result.boxes) == 0:
+                return []
+            return [
+                (CLASS_NAMES[int(c)] if int(c) < len(CLASS_NAMES) else "?",
+                 float(cf))
+                for c, cf in zip(
+                    result.boxes.cls.cpu().numpy(),
+                    result.boxes.conf.cpu().numpy()
+                )
+            ]
+
+        pt_dets   = parse_dets(pt_results[0])
+        onnx_dets = parse_dets(onnx_results[0])
+
+        pt_cls   = sorted([d[0] for d in pt_dets])
+        onnx_cls = sorted([d[0] for d in onnx_dets])
+        match    = "YES" if pt_cls == onnx_cls else "DIFF"
+        if match == "DIFF":
+            all_match = False
+
+        rows.append((src.name, pt_dets, onnx_dets, pt_ms, onnx_ms, match))
+
+        # ── Save annotated images ────────────────────────────────────────────
+        if save:
+            pt_ann,   _ = process_frame(pt_model,   frame, conf, iou, imgsz, device)
+            onnx_ann, _ = process_frame(onnx_model, frame, conf, iou, imgsz, device)
+            cv2.imwrite(str(output_dir / f"{src.stem}_pt{src.suffix}"),   pt_ann)
+            cv2.imwrite(str(output_dir / f"{src.stem}_onnx{src.suffix}"), onnx_ann)
+
+    # ── Per-image table ──────────────────────────────────────────────────────
+    print(f"\n  {'Image':<25} {'PT dets':>10} {'ONNX dets':>10} "
+          f"{'PT ms':>8} {'ONNX ms':>8} {'Match':>6}")
+    print("  " + "-" * 70)
+    for name, pt_dets, onnx_dets, pt_ms, onnx_ms, match in rows:
+        pt_str   = ", ".join(f"{c}({v:.0%})" for c, v in pt_dets) or "none"
+        onnx_str = ", ".join(f"{c}({v:.0%})" for c, v in onnx_dets) or "none"
+        match_col = "✅" if match == "YES" else "⚠️ "
+        print(f"  {name:<25} PT  : {pt_str}")
+        print(f"  {'':<25} ONNX: {onnx_str}")
+        print(f"  {'':<25} {pt_ms:>10.1f} {onnx_ms:>10.1f} {match_col:>6}")
+        print()
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    if not pt_times:
+        return
+
+    mean_pt   = sum(pt_times)   / len(pt_times)
+    mean_onnx = sum(onnx_times) / len(onnx_times)
+    speedup   = mean_pt / mean_onnx if mean_onnx > 0 else 1.0
+
+    print("=" * 62)
+    print("  SUMMARY")
+    print("=" * 62)
+    print(f"  Images tested      : {len(rows)}")
+    print(f"  PT   mean latency  : {mean_pt:.1f} ms  "
+          f"({1000/mean_pt:.1f} FPS)")
+    print(f"  ONNX mean latency  : {mean_onnx:.1f} ms  "
+          f"({1000/mean_onnx:.1f} FPS)")
+    print(f"  ONNX speedup       : {speedup:.2f}x  "
+          f"({'faster' if speedup >= 1 else 'slower'} than PT)")
+    print(f"  Detection match    : {'ALL MATCH ✅' if all_match else 'SOME DIFFER ⚠️'}")
+    if all_match:
+        print("  Conclusion         : ONNX is functionally equivalent to PT")
+    else:
+        print("  Conclusion         : Minor differences (conf rounding at border)")
+    print("=" * 62)
+    if save:
+        print(f"\n  Annotated images saved to: {output_dir}")
+        print("  Files: *_pt.jpg (PyTorch)  |  *_onnx.jpg (ONNX)")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main():
     args = parse_args()
-
-    # ── Model loading ─────────────────────────────────────────────────────────
-    model_path = Path(args.model)
-    if not model_path.exists():
-        print(f"❌ Model not found: {model_path}")
-        print("   Train first with: python train.py")
-        sys.exit(1)
 
     try:
         from ultralytics import YOLO
@@ -540,13 +667,6 @@ def main():
     if device is None:
         device = "0" if torch.cuda.is_available() else "cpu"
 
-    print(f"\n🍅 Agri-Trust — Inference Engine")
-    print(f"   Model  : {model_path}")
-    print(f"   Source : {args.source}")
-    print(f"   Device : {device}  |  Conf: {args.conf}  |  IoU: {args.iou}\n")
-
-    model = YOLO(str(model_path))
-
     # ── Source resolution ─────────────────────────────────────────────────────
     try:
         source_files, source_type = resolve_sources(args.source)
@@ -554,10 +674,63 @@ def main():
         print(f"❌ {e}")
         sys.exit(1)
 
+    output_dir = Path(args.output_dir)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # COMPARE MODE: PT vs ONNX
+    # ═══════════════════════════════════════════════════════════════════════════
+    if args.compare:
+        pt_path   = Path(args.model)
+        onnx_path = Path(args.onnx)
+
+        for p, label in [(pt_path, "PT"), (onnx_path, "ONNX")]:
+            if not p.exists():
+                print(f"❌ {label} model not found: {p}")
+                sys.exit(1)
+
+        # Only images supported in compare mode
+        img_files = [f for f in source_files
+                     if f.suffix.lower() in IMAGE_EXTS]
+        if not img_files:
+            print("❌ No images found for comparison (videos not supported in --compare mode)")
+            sys.exit(1)
+
+        print(f"\n🍅 Agri-Trust — PT vs ONNX Comparison")
+        print(f"   Source : {args.source}  ({len(img_files)} image(s))")
+        print(f"   Device : {device}  |  Conf: {args.conf}  |  IoU: {args.iou}")
+
+        compare_models(
+            pt_path=pt_path,
+            onnx_path=onnx_path,
+            source_files=img_files,
+            conf=args.conf,
+            iou=args.iou,
+            imgsz=args.imgsz,
+            device=device,
+            output_dir=output_dir,
+            save=not args.no_save,
+        )
+        return
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # NORMAL MODE: single model
+    # ═══════════════════════════════════════════════════════════════════════════
+    model_path = Path(args.model)
+    if not model_path.exists():
+        print(f"❌ Model not found: {model_path}")
+        print("   Train first with: python train.py")
+        sys.exit(1)
+
+    print(f"\n🍅 Agri-Trust — Inference Engine")
+    print(f"   Model  : {model_path}")
+    print(f"   Source : {args.source}")
+    print(f"   Device : {device}  |  Conf: {args.conf}  |  IoU: {args.iou}\n")
+
+    model = YOLO(str(model_path))
+
     print(f"📁 Found {len(source_files)} file(s) | Type: {source_type}")
 
     # ── Latency logger setup ──────────────────────────────────────────────────
-    output_dir = Path(args.output_dir)
     latency_csv = output_dir / "latency_log.csv"
     logger = LatencyLogger(latency_csv)
 

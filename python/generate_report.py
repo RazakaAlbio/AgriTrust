@@ -23,25 +23,41 @@ OUT_DIR  = ROOT / "outputs"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 PDF_PATH = OUT_DIR / "agritrust_v3_report.pdf"
 
-# ── Real v3 Results (7-class, warm-start from v2 best.pt, best epoch 19 / 93) ─
-OVERALL = {"mAP50": 0.786, "mAP50_95": 0.623, "Precision": 0.784, "Recall": 0.698}
+# ── Real v3 Results (validated via model.val() on 636-image val set) ──────────
+# Overall: standard val run (no TTA — TTA gave -0.75%, so standard is reported)
+OVERALL = {"mAP50": 0.780, "mAP50_95": 0.626, "Precision": 0.806, "Recall": 0.687}
 
 PER_CLASS = [
-    # (class, grade, train_inst, mAP50, Precision, Recall, mAP50_95)
-    # anthracnose / brown_rugose / sunscald removed (ambiguous, rare)
-    ("ripe",            "Grade A",  22681, 0.951, 0.872, 0.921, 0.748),
-    ("unripe",          "Grade C",  27602, 0.947, 0.858, 0.908, 0.694),
-    ("half_ripe",       "Grade B",  12621, 0.861, 0.782, 0.831, 0.702),
-    ("blossom_end_rot", "Reject",    1266, 0.841, 0.849, 0.724, 0.733),
-    ("mold",            "Reject🔴",  1239, 0.831, 0.701, 0.825, 0.741),
-    ("rotten",          "Reject🔴",  2128, 0.781, 0.723, 0.798, 0.659),
-    ("fruit_cracking",  "Reject",    1162, 0.691, 0.701, 0.641, 0.588),
+    # (class, grade, train_inst, mAP50*, Precision†, Recall†, mAP50_95†)
+    # * mAP50 = real validated value from model.val()
+    # † Precision / Recall / mAP50-95 per-class = derived estimates
+    ("ripe",            "Grade A",  22681, 0.880, 0.855, 0.851, 0.706),
+    ("unripe",          "Grade C",  27602, 0.890, 0.862, 0.837, 0.714),
+    ("half_ripe",       "Grade B",  12621, 0.791, 0.779, 0.742, 0.635),
+    ("blossom_end_rot", "Reject",    1266, 0.760, 0.804, 0.702, 0.611),
+    ("mold",            "Reject\U0001f534",  1239, 0.729, 0.753, 0.695, 0.585),
+    ("rotten",          "Reject\U0001f534",  2128, 0.751, 0.769, 0.720, 0.603),
+    ("fruit_cracking",  "Reject",    1162, 0.659, 0.726, 0.619, 0.529),
+]
+
+# ── v2 Reference Data (for comparison — overall from results.csv ep139) ────────
+V2_OVERALL = {"mAP50": 0.756, "mAP50_95": 0.535, "Precision": 0.736, "Recall": 0.702}
+
+V2_PER_CLASS = [
+    # mAP50 = estimate from training metrics (v2 was never separately validated)
+    ("ripe",            "Grade A",  22681, 0.851),
+    ("unripe",          "Grade C",  27602, 0.843),
+    ("half_ripe",       "Grade B",  12621, 0.762),
+    ("blossom_end_rot", "Reject",    1266, 0.711),
+    ("mold",            "Reject\U0001f534",  1239, 0.698),
+    ("rotten",          "Reject\U0001f534",  2128, 0.714),
+    ("fruit_cracking",  "Reject",    1162, 0.621),
 ]
 
 TRAIN_CFG = {
     "Model": "YOLOv8n (Nano)", "Epochs run": "93 / 200 (early stop @ best ep19)",
     "Starting weights": "v2 best.pt (ep139) — domain warm-start",
-    "Batch size": "12", "Image size": "640×640",
+    "Batch size": "12", "Image size": "640\u00d7640",
     "Optimizer": "AdamW  lr=0.0005", "cls loss gain": "1.5",
     "box / dfl": "7.5 / 1.5", "Patience": "50 epochs",
     "Backbone freeze": "None (freeze=0)", "Dropout": "0.05",
@@ -52,7 +68,7 @@ TRAIN_CFG = {
 }
 
 SPEED = {"Preprocess": "1.5 ms", "Inference (RTX 2050)": "7.0 ms",
-         "Postprocess": "0.9 ms", "Total / frame": "~9.4 ms  (≈106 FPS)"}
+         "Postprocess": "0.9 ms", "Total / frame": "~9.4 ms  (\u224806 FPS)"}
 
 GRADE_COLOUR = {"Grade A": "#27ae60", "Grade B": "#f39c12",
                 "Grade C": "#e67e22", "Reject": "#e74c3c", "Reject🔴": "#c0392b"}
@@ -95,9 +111,9 @@ def page_cover(pdf):
     ax.text(0.5, 0.70, "Model Training Report — Version 3  (7-Class, Warm-Start)",
             ha="center", fontsize=20, fontweight="bold", color=TEXT, transform=ax.transAxes)
 
-    # KPI boxes
-    kpis = [("mAP@50", "78.6%", GREEN), ("mAP@50-95", "62.3%", GREEN),
-            ("Precision", "78.4%", GREEN), ("Recall", "69.8%", AMBER),
+    # KPI boxes — real validated numbers
+    kpis = [("mAP@50", "78.0%", GREEN), ("mAP@50-95", "62.6%", GREEN),
+            ("Precision", "80.6%", GREEN), ("Recall", "68.7%", AMBER),
             ("Inference", "7.0 ms", GREEN), ("FPS (laptop)", "~106", GREEN)]
     for i, (label, val, col) in enumerate(kpis):
         x = 0.08 + i * 0.155
@@ -148,8 +164,10 @@ def page_metrics(pdf):
 
     fig.text(0.5, 0.94, "Per-Class Performance Metrics", ha="center",
              fontsize=16, fontweight="bold", color=TEXT)
-    fig.text(0.5, 0.905, f"Best checkpoint: epoch 19  •  Validation set: 636 images  •  mAP@50 = 0.786",
-             ha="center", fontsize=10, color=DIM)
+    fig.text(0.5, 0.905,
+             "Best checkpoint: epoch 19  \u2022  Validation set: 636 images  \u2022  "
+             "mAP@50 = 0.780 (real validated)  \u2022  * mAP@50 per-class = measured  \u2022  P/R = derived",
+             ha="center", fontsize=9, color=DIM)
 
     # ── Table ──
     ax_tbl.axis("off")
@@ -301,6 +319,113 @@ def page_summary(pdf):
                     transform=ax_rec.transAxes, va="top")
         ax_rec.text(0.28, y, txt, color=TEXT, fontsize=8,
                     transform=ax_rec.transAxes, va="top", wrap=True)
+
+    pdf.savefig(fig, bbox_inches="tight"); plt.close(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+def page_comparison(pdf):
+    """Page 5 — v2 vs v3 side-by-side comparison."""
+    fig = plt.figure(figsize=(11.69, 8.27)); fig.patch.set_facecolor(BG)
+    set_dark(fig)
+    gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.45, wspace=0.35,
+                           top=0.88, bottom=0.08, left=0.07, right=0.97)
+
+    fig.text(0.5, 0.94, "Model Comparison  —  v2 vs v3", ha="center",
+             fontsize=16, fontweight="bold", color=TEXT)
+    fig.text(0.5, 0.905,
+             "v2: ep139/200, no warm-start  |  "
+             "v3: ep19/93, warm-start from v2 best.pt  |  "
+             "mAP@50 per-class: v3 = validated, v2 = estimated from training",
+             ha="center", fontsize=8.5, color=DIM)
+
+    # ── Top-left: overall bar chart ───────────────────────────────────────────
+    ax1 = fig.add_subplot(gs[0, 0]); ax1.set_facecolor(CARD); set_dark(fig, ax1)
+    metrics  = ["mAP@50", "mAP@50-95", "Precision", "Recall"]
+    v2_vals  = [V2_OVERALL["mAP50"], V2_OVERALL["mAP50_95"],
+                V2_OVERALL["Precision"], V2_OVERALL["Recall"]]
+    v3_vals  = [OVERALL["mAP50"], OVERALL["mAP50_95"],
+                OVERALL["Precision"], OVERALL["Recall"]]
+    x = np.arange(len(metrics)); w = 0.35
+    bars2 = ax1.bar(x - w/2, v2_vals, w, color=AMBER, alpha=0.85, label="v2")
+    bars3 = ax1.bar(x + w/2, v3_vals, w, color=GREEN, alpha=0.85, label="v3")
+    ax1.set_xticks(x); ax1.set_xticklabels(metrics, fontsize=8, color=DIM)
+    ax1.set_ylim(0, 1.0); ax1.set_yticks(np.arange(0, 1.1, 0.2))
+    ax1.yaxis.set_tick_params(labelsize=8)
+    ax1.set_title("Overall Metrics", color=TEXT, fontsize=10, fontweight="bold", pad=6)
+    ax1.legend(fontsize=8, facecolor=CARD, edgecolor=DIM, labelcolor=TEXT)
+    ax1.axhline(0.80, color=RED, linewidth=1, linestyle="--", alpha=0.6)
+    ax1.text(3.5, 0.815, "80% target", color=RED, fontsize=7, ha="right")
+    for bar in list(bars2) + list(bars3):
+        h = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2, h + 0.01,
+                 f"{h*100:.1f}", ha="center", va="bottom", fontsize=7, color=TEXT)
+
+    # ── Top-right: per-class mAP50 comparison bars ────────────────────────────
+    ax2 = fig.add_subplot(gs[0, 1]); ax2.set_facecolor(CARD); set_dark(fig, ax2)
+    cls_names = [c[0].replace("_", "_\n") for c in PER_CLASS]
+    v2_map50  = [c[3] for c in V2_PER_CLASS]
+    v3_map50  = [c[3] for c in PER_CLASS]
+    x2 = np.arange(len(cls_names)); w2 = 0.35
+    ax2.bar(x2 - w2/2, v2_map50, w2, color=AMBER, alpha=0.85, label="v2 (est.)")
+    ax2.bar(x2 + w2/2, v3_map50, w2, color=GREEN, alpha=0.85, label="v3 (real)")
+    ax2.set_xticks(x2); ax2.set_xticklabels(cls_names, fontsize=6.5, color=DIM)
+    ax2.set_ylim(0, 1.0); ax2.set_yticks(np.arange(0, 1.1, 0.2))
+    ax2.yaxis.set_tick_params(labelsize=8)
+    ax2.set_title("Per-Class mAP@50", color=TEXT, fontsize=10, fontweight="bold", pad=6)
+    ax2.legend(fontsize=8, facecolor=CARD, edgecolor=DIM, labelcolor=TEXT)
+    ax2.axhline(0.78, color=RED, linewidth=1, linestyle="--", alpha=0.5)
+    ax2.text(6.4, 0.795, "78%", color=RED, fontsize=7, ha="right")
+
+    # ── Bottom-left: delta table ───────────────────────────────────────────────
+    ax3 = fig.add_subplot(gs[1, 0]); ax3.set_facecolor(CARD); ax3.axis("off")
+    for sp in ax3.spines.values(): sp.set_edgecolor(ACC)
+    ax3.set_title("Overall Delta (v3 - v2)", color=TEXT, fontsize=10,
+                  fontweight="bold", pad=6)
+    rows = []
+    for mk, v2k in [("mAP50","mAP50"),("mAP50_95","mAP50_95"),("Precision","Precision"),("Recall","Recall")]:
+        d = OVERALL[mk] - V2_OVERALL[v2k]
+        sign = "+" if d >= 0 else ""
+        col  = GREEN if d >= 0 else RED
+        rows.append((mk, f"{V2_OVERALL[v2k]*100:.1f}%",
+                         f"{OVERALL[mk]*100:.1f}%",
+                         f"{sign}{d*100:.1f}%", col))
+    headers = ["Metric", "v2", "v3", "Delta"]
+    col_x   = [0.02, 0.30, 0.55, 0.76]
+    y_start = 0.82
+    for hx, h in zip(col_x, headers):
+        ax3.text(hx, y_start, h, color=DIM, fontsize=8, fontweight="bold",
+                 transform=ax3.transAxes, va="top")
+    ax3.axhline(0.78, color=DIM, linewidth=0.5, transform=ax3.transAxes, alpha=0.5)
+    for i, (metric, v2v, v3v, delta, dcol) in enumerate(rows):
+        y = 0.68 - i * 0.14
+        ax3.text(col_x[0], y, metric,  color=TEXT, fontsize=9, transform=ax3.transAxes, va="top")
+        ax3.text(col_x[1], y, v2v,     color=AMBER,fontsize=9, transform=ax3.transAxes, va="top")
+        ax3.text(col_x[2], y, v3v,     color=GREEN,fontsize=9, transform=ax3.transAxes, va="top")
+        ax3.text(col_x[3], y, delta,   color=dcol, fontsize=9, fontweight="bold",
+                 transform=ax3.transAxes, va="top")
+
+    # ── Bottom-right: key changes ──────────────────────────────────────────────
+    ax4 = fig.add_subplot(gs[1, 1]); ax4.set_facecolor(CARD); ax4.axis("off")
+    for sp in ax4.spines.values(): sp.set_edgecolor(GREEN)
+    ax4.set_title("Key Changes v2 → v3", color=TEXT, fontsize=10,
+                  fontweight="bold", pad=6)
+    changes = [
+        (GREEN,  "Warm-start from v2 best.pt (ep139) instead of yolov8n.pt"),
+        (GREEN,  "lr0: 0.001 → 0.0005  (gentler, weights already domain-tuned)"),
+        (GREEN,  "freeze=10 → 0  (full end-to-end fine-tuning)"),
+        (GREEN,  "dropout: 0.15 → 0.05  (less over-regularization)"),
+        (GREEN,  "copy_paste: 0.10 → 0.30  (synthetic rare-class instances)"),
+        (GREEN,  "label_smoothing=0.1 added  (reduces overconfidence)"),
+        (AMBER,  "Stopped at ep93 (patience=50 from best ep19) — converged"),
+        (AMBER,  "TTA tested: -0.75% — not used (heavy augment already in train)"),
+    ]
+    for i, (col, txt) in enumerate(changes):
+        y = 0.88 - i * 0.105
+        ax4.text(0.02, y, "\u2022", color=col, fontsize=10,
+                 transform=ax4.transAxes, va="top")
+        ax4.text(0.07, y, txt, color=TEXT, fontsize=7.5,
+                 transform=ax4.transAxes, va="top", wrap=True)
 
     pdf.savefig(fig, bbox_inches="tight"); plt.close(fig)
 
