@@ -95,8 +95,8 @@ edge-computing architecture. The pipeline is:
 | Route | Page | Access | Description |
 |---|---|---|---|
 | `/` | Landing | Public | Project intro & navigation |
-| `/verify` | Consumer Verification | Public (mobile-first) | Scan QR → view AI result, sensor data, blockchain hash |
-| `/dashboard` | Farmer Dashboard | Private | KPI cards, 7-day quality trend chart, recent scans table, PDF certificate export, QR generator |
+| `/verify?batch={id}` | Consumer Verification | Public (mobile-first) | Scan QR → product grading result, sensor data, blockchain hash |
+| `/dashboard` | Farmer Dashboard | Private | KPI cards, 7-day grade distribution chart, recent scans table, PDF certificate export, QR generator |
 | `/admin` | Admin Panel | Protected (password gate) | Register users, RFID tag assignment, device network status |
 
 ### Key Components
@@ -144,8 +144,8 @@ npm test
 | Version | Classes | Best Epoch | mAP@50 | Notes |
 |---|---|---|---|---|
 | v1 | 10 | 31/150 | 73.3% | Early stop, 3.6h |
-| **v2** | **7** | **139/200** | **75.6%** | Removed 3 ambiguous classes |
-| v3 (pending) | 7 | TBD | target **80%** | Warm-start from v2 best.pt |
+| v2 | 7 | 139/200 | 75.6% | Removed 3 ambiguous classes |
+| **v3 ✅** | **7** | **19/93** | **78.0% (validated)** | Warm-start from v2, conf=0.20 deployed |
 
 ### Training (v3 config)
 
@@ -159,13 +159,25 @@ python python/train.py
 
 | Param | v2 | v3 |
 |---|---|---|
-| Starting weights | `yolov8n.pt` | `runs/agritrust_v1/weights/best.pt` |
+| Starting weights | `yolov8n.pt` | `v2 best.pt (ep139)` |
 | `lr0` | 0.001 | 0.0005 |
 | `freeze` | 10 epochs | 0 (full fine-tune) |
 | `dropout` | 0.15 | 0.05 |
 | `label_smoothing` | 0.0 | 0.1 |
 | `copy_paste` | 0.10 | 0.30 |
 | `patience` | 40 | 50 |
+
+**v3 validated per-class mAP@50 (real, from `model.val()`):**
+
+| Class | Grade | mAP@50 |
+|---|---|---|
+| ripe | Grade A | 88.0% ✅ |
+| unripe | Grade C | 89.0% ✅ |
+| half_ripe | Grade B | 79.1% ✅ |
+| blossom_end_rot | Reject | 76.0% |
+| rotten | Reject 🔴 | 75.1% |
+| mold | Reject 🔴 | 72.9% |
+| fruit_cracking | Reject | 65.9% |
 
 ### Generate Training Report (PDF)
 
@@ -185,7 +197,25 @@ python python/export_tensorrt.py
 python python/inference_test.py
 ```
 
-Target: **≥15 FPS** at 640×640, conf=0.25, on Jetson Nano 4GB.
+Target: **≥15 FPS** at 640×640, conf=0.20, on Jetson Nano 4GB.
+
+### Export & Validation
+
+```bash
+# Export to ONNX (Windows / any platform)
+python python/export_tensorrt.py   # Answer 'Y' to ONNX-only on Windows
+# → python/exports/best.onnx  (12.3 MB)
+
+# Validate PT vs ONNX equivalence
+python python/inference_test.py --source python/tests --compare
+
+# Export to TensorRT FP16 — run ON the Jetson Nano
+python python/export_tensorrt.py
+# → python/exports/best.engine
+
+# Run TTA validation
+python python/validate_tta.py
+```
 
 ### Python Dependencies
 
@@ -338,34 +368,37 @@ agritrust-hub-main/
 ├── src/                          # React web application
 │   ├── pages/
 │   │   ├── Index.tsx             # Landing page
-│   │   ├── ConsumerVerification.tsx  # Public QR scan result page
+│   │   ├── ConsumerVerification.tsx  # Public QR scan result (/verify?batch=ID)
 │   │   ├── FarmerDashboard.tsx   # Farmer session dashboard
 │   │   └── AdminPanel.tsx        # Admin management panel
 │   ├── components/
 │   │   ├── AdminLoginGate.tsx    # Password protection wrapper
-│   │   ├── QRGenerator.tsx       # QR code generator
+│   │   ├── QRGenerator.tsx       # QR code generator (encodes /verify?batch=ID)
 │   │   └── ui/                   # shadcn/ui components
 │   └── lib/
+│       ├── grading.ts            # AI class → grade mapping (source of truth)
 │       └── generateCertificate.ts # jsPDF certificate export
 │
 ├── python/                       # AI/ML pipeline
-│   ├── train.py                  # YOLOv8 training script (main)
+│   ├── train.py                  # YOLOv8 training script
 │   ├── generate_report.py        # PDF training report generator
-│   ├── export_tensorrt.py        # TensorRT FP16 export for Jetson
-│   ├── inference_test.py         # Inference validation script
+│   ├── export_tensorrt.py        # ONNX + TensorRT FP16 export
+│   ├── inference_test.py         # Inference validation + PT vs ONNX compare
+│   ├── validate_tta.py           # TTA validation script
 │   ├── rpcam_augmentation.py     # RP Cam OV5647 augmentation simulation
 │   ├── class_analysis.py         # Class distribution analysis
 │   ├── remap_labels.py           # Label re-indexing utility
 │   ├── requirements.txt          # Python dependencies
 │   ├── config/
-│   │   └── agritrust_train.yaml  # Hyperparameter config
-│   ├── dataset/                  # Training data (Roboflow export)
+│   │   └── agritrust_train.yaml  # Hyperparameter config (reference only)
+│   ├── exports/
+│   │   └── best.onnx             # v3 ONNX export (12.3 MB)
 │   ├── runs/
-│   │   ├── agritrust_v1/         # v2 model artifacts (best.pt @ ep139)
-│   │   └── agritrust_v3/         # v3 model artifacts (pending)
+│   │   ├── agritrust_v2/         # v2 model artifacts (best.pt @ ep139)
+│   │   └── agritrust_v3/         # v3 model artifacts (best.pt @ ep19, 78.0% mAP)
 │   └── outputs/
 │       ├── agritrust_v2_report.pdf
-│       └── agritrust_v3_report.pdf (pending)
+│       └── agritrust_v3_report.pdf
 │
 ├── public/                       # Static assets
 ├── package.json
@@ -380,72 +413,83 @@ agritrust-hub-main/
 ### 🔴 Critical — Must Fix Before Deployment
 
 - **[ ] Web grading labels mismatch AI model**
-  The web app (`ConsumerVerification.tsx`, `FarmerDashboard.tsx`) currently uses
-  a generic `PASSED`/`FAILED` binary result and a numeric `quality` score (0-100).
-  **This must be updated to display the actual AI grading output:**
-  - Grade A / Grade B / Grade C / Reject 🔴
-  - Per-class label (e.g., `mold`, `fruit_cracking`)
-  - Confidence score (e.g., 0.91)
-  - Source class name from YOLOv8 output
+  `ConsumerVerification.tsx` and `FarmerDashboard.tsx` show binary `PASSED/FAILED`.
+  Must be updated to show: **Grade A / Grade B / Grade C / Reject**, class label, confidence.
 
 - **[ ] Sensor data on `/verify` uses mock values**
-  `ConsumerVerification.tsx` has hardcoded `MOCK_DATA` for weight, VOC, temperature,
-  and RGB color. These need to be replaced with real API calls to fetch actual
-  sensor readings stored per batch in the Azure backend.
+  Weight and gas_ppm are hardcoded. Replace with real API call to Azure backend.
 
-- **[ ] `rgb` sensor field is misleading**
-  The current consumer page shows a `Color Spectrum` field with an RGB hex value.
-  The real system doesn't have a separate RGB sensor — color is inferred by the
-  AI camera. Either remove this field or replace with the AI-detected class color.
+- **[ ] `rgb` and `temperature` sensor fields are fake**
+  No RGB sensor or temperature sensor in the hardware BOM. Remove these fields.
 
-- **[ ] Temperature sensor not in current hardware BOM**
-  The consumer page shows `temperature` as a sensor reading, but no temperature
-  sensor (e.g., DHT22) is listed in the IoT hardware. Clarify and remove or add.
+- **[ ] Azure backend not set up**
+  Azure VM is provisioned but empty. Backend API needs to be built and deployed
+  before any real data can flow from the Jetson Nano to the web app.
+
+- **[ ] TensorRT export not run on Jetson Nano**
+  `export_tensorrt.py` must be run **on the Jetson Nano** (not Windows) to produce
+  the `.engine` file. Transfer `best.pt` to Jetson and run there.
 
 ### 🟡 Important — Before Production
 
 - **[ ] Blockchain "Verify on Blockchain" button is non-functional**
-  The button in `ConsumerVerification.tsx` needs to be wired to open the actual
-  Polygon Amoy transaction URL: `https://amoy.polygonscan.com/tx/{txHash}`.
+  Needs real Polygon Amoy TX hash. Placeholder: links to `https://amoy.polygonscan.com/`.
+  Requires: Polygon Amoy wallet setup + Thirdweb/Tatum contract deployment.
 
 - **[ ] Admin panel has no real authentication**
-  `AdminLoginGate.tsx` uses a hardcoded client-side password. This must be replaced
-  with a proper backend auth flow (JWT or session token) before any real deployment.
+  `AdminLoginGate.tsx` uses a hardcoded client-side password. Replace with
+  JWT/session auth from Azure backend.
 
 - **[ ] RFID management tab is UI-only**
-  The RFID assignment tab in `AdminPanel.tsx` has no backend integration. Scanning
-  and linking RFID tags to farmers needs to be connected to the Azure API.
+  Scanning and linking RFID tags needs Azure API integration.
 
 - **[ ] Device status is static mock data**
-  `AdminPanel.tsx` `DEVICES` array is hardcoded. It should poll the Azure backend
-  for real Jetson Nano + ESP32 heartbeat/status in real-time.
+  `AdminPanel.tsx` `DEVICES` array is hardcoded. Should poll Azure backend
+  for real Jetson + ESP32 heartbeat status.
 
-- **[ ] `generate_report.py` per-class metrics are estimates**
-  The v3 per-class mAP, Precision, Recall numbers in `generate_report.py` are
-  estimated. After v3 training completes, run `python/inference_test.py` with
-  the actual `best.pt` to get real per-class validation numbers and update the
-  `PER_CLASS` table accordingly.
+- **[ ] Jetson Nano inference script not yet written**
+  The full edge inference loop (camera → YOLOv8 → RFID → OLED → buzzer → POST)
+  is planned but not yet implemented.
 
-- **[ ] `agritrust_train.yaml` config not used by `train.py`**
-  `train.py` defines all hyperparameters inline in `train_args`. The
-  `config/agritrust_train.yaml` file exists but is not currently loaded.
-  Either wire it in or remove it to avoid confusion.
+- **[ ] ESP32 firmware not yet written**
+  HX711 weight + MQ-135 gas sensor firmware for ESP32 not yet implemented.
+
+### 🟢 Completed
+
+- **[✅] v3 model training** — 78.0% mAP@50 validated (ep19/93, YOLOv8n)
+- **[✅] ONNX export** — `python/exports/best.onnx` (12.3 MB, 1.84× faster than PT)
+- **[✅] PT vs ONNX comparison** — functionally equivalent at conf ≥ 0.25
+- **[✅] TTA validation** — tested, TTA gave -0.75% (not used in deployment)
+- **[✅] Training report** — `python/outputs/agritrust_v3_report.pdf` with real validated numbers
+- **[✅] `generate_report.py` per-class metrics** — updated to real validated values
+- **[✅] README** — comprehensive project documentation written
+- **[✅] `.gitignore`** — large artifacts excluded (datasets, runs, exports, outputs)
 
 ### 🟢 Nice to Have
 
-- **[ ] Offline-first PWA support**
-  The system is designed for farm environments with poor connectivity. The web app
-  should cache grading results locally (IndexedDB / Service Worker) and sync
-  to Azure when back online. The `globalSync: "local"` state in ConsumerVerification
-  hints at this but it's not implemented.
+- **[ ] Offline-first PWA** — cache grading results in IndexedDB, sync when online
+- **[ ] `agritrust_train.yaml` wired into `train.py`** — currently defined inline
 
-- **[ ] v3 model training still pending**
-  Run `python python/train.py` to start the v3 training.
-  After completion, update `generate_report.py` with real metrics and regenerate the PDF.
+---
 
-- **[ ] TensorRT export not validated on Jetson Nano**
-  `export_tensorrt.py` exists but should be tested end-to-end on the actual
-  Jetson Nano 4GB hardware with the v3 `best.pt` weights.
+## Setup Checklist (Full System)
+
+When the full system is ready for deployment, complete these steps in order:
+
+```
+[ ] 1. Set up Azure backend API (Node.js/FastAPI + PostgreSQL)
+[ ] 2. Deploy backend to Azure VM, note the public API URL
+[ ] 3. Register Polygon Amoy wallet, deploy grading smart contract
+[ ] 4. Wire Thirdweb/Tatum API to Azure backend for tx anchoring
+[ ] 5. Transfer best.pt to Jetson Nano
+[ ] 6. Run export_tensorrt.py on Jetson Nano → get best.engine
+[ ] 7. Flash ESP32 firmware (HX711 + MQ-135)
+[ ] 8. Wire all IoT components (RFID, OLED, Buzzer, CSI camera)
+[ ] 9. Write and test Jetson Nano inference loop script
+[ ] 10. Update VITE_API_BASE_URL in web app .env to Azure API URL
+[ ] 11. Test full end-to-end: scan → grade → POST → blockchain → QR → web
+[ ] 12. Build web app: npm run build → deploy to hosting
+```
 
 ---
 
@@ -461,10 +505,10 @@ agritrust-hub-main/
 | AI Model | YOLOv8n (Ultralytics) |
 | Training | PyTorch 2.0, CUDA, AdamW, Cosine LR |
 | Augmentation | Albumentations, RP Cam OV5647 simulation |
-| Export Target | TensorRT FP16 (Jetson Nano) |
+| Export Target | ONNX (done) + TensorRT FP16 (Jetson, pending) |
 | Blockchain | Polygon Amoy Testnet |
 | Blockchain SDK | Thirdweb / Tatum API |
-| Cloud Backend | Azure (API + database) |
+| Cloud Backend | Azure VM (provisioned, not yet configured) |
 | Edge Processor | NVIDIA Jetson Nano 4GB |
 | Sensor Node | ESP32 + HX711 + MQ-135 |
 | Camera | Raspberry Pi Cam v1.3 (OV5647, 5MP, CSI) |

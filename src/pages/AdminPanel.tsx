@@ -119,7 +119,7 @@ export default function AdminPanel() {
               </div>
               {/* Linked tags */}
               {RFID_LINKS.map((link) => (
-                <div key={link.hex} className="p-4 border-b border-border last:border-b-0 flex items-center justify-between">
+                <div key={link.hex} className="p-4 border-b border-border last:border-b-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
                   <div className="flex items-center gap-3">
                     <CreditCard className={`w-4 h-4 ${link.linked ? "text-success" : "text-muted-foreground"}`} />
                     <div>
@@ -146,7 +146,7 @@ export default function AdminPanel() {
               </div>
               <div className="bg-background font-mono text-sm">
                 {DEVICES.map((device) => (
-                  <div key={device.name} className="p-4 border-b border-border last:border-b-0 flex items-center justify-between">
+                  <div key={device.name} className="p-4 border-b border-border last:border-b-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
                     <div className="flex items-center gap-3">
                       {device.status === "ONLINE" && <Wifi className="w-4 h-4 text-success" />}
                       {device.status === "SYNCING" && <Loader2 className="w-4 h-4 text-primary animate-spin" />}

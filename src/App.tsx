@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
 import ConsumerVerification from "./pages/ConsumerVerification.tsx";
-import FarmerDashboard from "./pages/FarmerDashboard.tsx";
+import Dashboard from "./pages/Dashboard.tsx";
 import AdminPanel from "./pages/AdminPanel.tsx";
 import AdminLoginGate from "./components/AdminLoginGate.tsx";
 import NotFound from "./pages/NotFound.tsx";
@@ -21,7 +21,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/verify" element={<ConsumerVerification />} />
-          <Route path="/dashboard" element={<FarmerDashboard />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/admin" element={<AdminLoginGate><AdminPanel /></AdminLoginGate>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
