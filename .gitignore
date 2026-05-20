@@ -24,6 +24,9 @@ dist-ssr
 *.sw?
 
 # Python — AI/ML pipeline
+runs/detect/val
+runs/detect
+runs
 python/runs/
 python/outputs/
 python/dataset/

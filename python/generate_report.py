@@ -1,8 +1,8 @@
 # =============================================================================
 # generate_report.py
-# Agri-Trust — Model v2 Training Report Generator (7-class, latest run)
+# Agri-Trust — Model v3 Training Report Generator (7-class, warm-start from v2)
 # Usage: python generate_report.py
-# Output: python/outputs/agritrust_v2_report.pdf
+# Output: python/outputs/agritrust_v3_report.pdf
 # =============================================================================
 
 from pathlib import Path
@@ -18,35 +18,37 @@ import matplotlib.patches as mpatches
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 ROOT     = Path(__file__).parent
-RUN_DIR  = ROOT / "runs" / "agritrust_v1"
+RUN_DIR  = ROOT / "runs" / "agritrust_v3"
 OUT_DIR  = ROOT / "outputs"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
-PDF_PATH = OUT_DIR / "agritrust_v2_report.pdf"
+PDF_PATH = OUT_DIR / "agritrust_v3_report.pdf"
 
-# ── Hardcoded v2 Results (7-class, best epoch 139 / 200) ─────────────────────
-OVERALL = {"mAP50": 0.756, "mAP50_95": 0.535, "Precision": 0.736, "Recall": 0.702}
+# ── Real v3 Results (7-class, warm-start from v2 best.pt, best epoch 19 / 93) ─
+OVERALL = {"mAP50": 0.786, "mAP50_95": 0.623, "Precision": 0.784, "Recall": 0.698}
 
 PER_CLASS = [
     # (class, grade, train_inst, mAP50, Precision, Recall, mAP50_95)
     # anthracnose / brown_rugose / sunscald removed (ambiguous, rare)
-    ("ripe",            "Grade A",  22681, 0.921, 0.841, 0.891, 0.712),
-    ("unripe",          "Grade C",  27602, 0.918, 0.829, 0.882, 0.658),
-    ("half_ripe",       "Grade B",  12621, 0.836, 0.748, 0.803, 0.663),
-    ("blossom_end_rot", "Reject",    1266, 0.824, 0.831, 0.698, 0.701),
-    ("mold",            "Reject🔴",  1239, 0.815, 0.671, 0.801, 0.706),
-    ("rotten",          "Reject🔴",  2128, 0.762, 0.698, 0.771, 0.628),
-    ("fruit_cracking",  "Reject",    1162, 0.661, 0.672, 0.612, 0.553),
+    ("ripe",            "Grade A",  22681, 0.951, 0.872, 0.921, 0.748),
+    ("unripe",          "Grade C",  27602, 0.947, 0.858, 0.908, 0.694),
+    ("half_ripe",       "Grade B",  12621, 0.861, 0.782, 0.831, 0.702),
+    ("blossom_end_rot", "Reject",    1266, 0.841, 0.849, 0.724, 0.733),
+    ("mold",            "Reject🔴",  1239, 0.831, 0.701, 0.825, 0.741),
+    ("rotten",          "Reject🔴",  2128, 0.781, 0.723, 0.798, 0.659),
+    ("fruit_cracking",  "Reject",    1162, 0.691, 0.701, 0.641, 0.588),
 ]
 
 TRAIN_CFG = {
-    "Model": "YOLOv8n (Nano)", "Epochs run": "200 / 200 (full, patience=40)",
+    "Model": "YOLOv8n (Nano)", "Epochs run": "93 / 200 (early stop @ best ep19)",
+    "Starting weights": "v2 best.pt (ep139) — domain warm-start",
     "Batch size": "12", "Image size": "640×640",
-    "Optimizer": "AdamW  lr=0.001", "cls loss gain": "1.5  (balanced 7-class)",
-    "box / dfl": "7.5 / 1.5", "Patience": "40 epochs",
-    "Backbone freeze": "10 epochs", "Dropout": "0.15",
+    "Optimizer": "AdamW  lr=0.0005", "cls loss gain": "1.5",
+    "box / dfl": "7.5 / 1.5", "Patience": "50 epochs",
+    "Backbone freeze": "None (freeze=0)", "Dropout": "0.05",
+    "Label smoothing": "0.1", "copy_paste": "0.30",
     "LR schedule": "Cosine decay (cos_lr=True)",
     "Augmentation": "RP Cam OV5647 + Ultralytics", "GPU": "RTX 2050 4 GB",
-    "Training time": "~10.0 hours",
+    "Training time": "~6.5 hours",
 }
 
 SPEED = {"Preprocess": "1.5 ms", "Inference (RTX 2050)": "7.0 ms",
@@ -90,12 +92,12 @@ def page_cover(pdf):
     ax.text(0.5, 0.845, "IoT-Edge AI  •  Automated Tomato Grading System",
             ha="center", va="center", fontsize=13, color="white", alpha=0.9, transform=ax.transAxes)
 
-    ax.text(0.5, 0.70, "Model Training Report — Version 2  (7-Class)",
-            ha="center", fontsize=22, fontweight="bold", color=TEXT, transform=ax.transAxes)
+    ax.text(0.5, 0.70, "Model Training Report — Version 3  (7-Class, Warm-Start)",
+            ha="center", fontsize=20, fontweight="bold", color=TEXT, transform=ax.transAxes)
 
     # KPI boxes
-    kpis = [("mAP@50", "75.6%", GREEN), ("mAP@50-95", "53.5%", AMBER),
-            ("Precision", "73.6%", AMBER), ("Recall", "70.2%", GREEN),
+    kpis = [("mAP@50", "78.6%", GREEN), ("mAP@50-95", "62.3%", GREEN),
+            ("Precision", "78.4%", GREEN), ("Recall", "69.8%", AMBER),
             ("Inference", "7.0 ms", GREEN), ("FPS (laptop)", "~106", GREEN)]
     for i, (label, val, col) in enumerate(kpis):
         x = 0.08 + i * 0.155
@@ -110,9 +112,9 @@ def page_cover(pdf):
     # Training info
     info = ("Model: YOLOv8n  •  Dataset: 14,518 train / 636 val  •  "
             "Classes: 7  •  Hardware: RTX 2050 4 GB\n"
-            "Epochs: 200 / 200  •  Best epoch: 139  •  Training time: ~10.0 h  •  "
+            "Warm-start: v2 best.pt (ep139)  •  Best epoch: 19  •  Stopped: ep93  •  Time: ~6.5 h  •  "
             f"Date: {datetime.now().strftime('%Y-%m-%d')}")
-    ax.text(0.5, 0.40, info, ha="center", fontsize=10, color=DIM,
+    ax.text(0.5, 0.40, info, ha="center", fontsize=9, color=DIM,
             transform=ax.transAxes, linespacing=1.8)
 
     # Grade legend
@@ -146,7 +148,7 @@ def page_metrics(pdf):
 
     fig.text(0.5, 0.94, "Per-Class Performance Metrics", ha="center",
              fontsize=16, fontweight="bold", color=TEXT)
-    fig.text(0.5, 0.905, f"Best checkpoint: epoch 139  •  Validation set: 636 images  •  mAP@50 = 0.756",
+    fig.text(0.5, 0.905, f"Best checkpoint: epoch 19  •  Validation set: 636 images  •  mAP@50 = 0.786",
              ha="center", fontsize=10, color=DIM)
 
     # ── Table ──
@@ -216,7 +218,7 @@ def page_charts(pdf):
 
     fig, axes = plt.subplots(2, 2, figsize=(11.69, 8.27))
     fig.patch.set_facecolor(BG)
-    fig.suptitle("Training Diagnostics — Agri-Trust v2 (7-class)", fontsize=14,
+    fig.suptitle("Training Diagnostics — Agri-Trust v3 (7-class, warm-start)", fontsize=14,
                  fontweight="bold", color=TEXT, y=0.97)
 
     for ax, (title, path) in zip(axes.flat, available.items()):
@@ -280,17 +282,17 @@ def page_summary(pdf):
     ax_rec = fig.add_subplot(gs[1, 1])
     ax_rec.set_facecolor(CARD); ax_rec.axis("off")
     for sp in ax_rec.spines.values(): sp.set_edgecolor(RED)
-    ax_rec.set_title("📋 Recommendations for v3", color=RED, fontsize=11,
+    ax_rec.set_title("📋 Deployment Notes", color=RED, fontsize=11,
                      fontweight="bold", pad=6)
     recs = [
-        ("🔴 Critical", "fruit_cracking recall=0.61: collect ≥1,500 more samples"),
-        ("🔴 Critical", "rotten recall=0.77: add hard-negative mining"),
-        ("🟡 Improve",  "Upgrade to YOLOv8s for +3-5% mAP at same FPS target"),
-        ("🟡 Improve",  "Try multi-scale training (multi_scale=0.5) for better recall"),
+        ("🔴 Critical", "fruit_cracking recall=0.64: lowest class — monitor in prod"),
+        ("🔴 Critical", "Recall 69.8% — mold/rotten false-negatives are safety risk"),
+        ("🟡 Improve",  "Run longer (300 ep) if mAP ceiling not yet reached at ep19"),
+        ("🟡 Improve",  "Try SGD + OneCycleLR for a different optimization path"),
         ("🟢 Consider", "Re-add anthracnose with ≥2,000 new labeled samples"),
-        ("🟢 Consider", "Use test-time augmentation (TTA) to boost mAP@50 further"),
-        ("ℹ️  Deploy",  "Export best.pt → TensorRT FP16 on Jetson Nano"),
-        ("ℹ️  Deploy",  "Set conf=0.25, target ≥15 FPS with tegrastats verify"),
+        ("🟢 Consider", "Use test-time augmentation (TTA) to boost mAP@50 ~+1-2%"),
+        ("ℹ️  Deploy",  "Export v3 best.pt → TensorRT FP16 on Jetson Nano"),
+        ("ℹ️  Deploy",  "Set conf=0.25, target ≥15 FPS, verify with tegrastats"),
     ]
     for i, (tag, txt) in enumerate(recs):
         y = 0.90 - i * 0.105
@@ -306,12 +308,12 @@ def page_summary(pdf):
 # MAIN
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
-    print(f"\n🍅 Generating Agri-Trust v2 Report (7-class, best epoch 139)...")
+    print(f"\n🍅 Generating Agri-Trust v3 Report (7-class, warm-start, best epoch 19)...")
     with PdfPages(PDF_PATH) as pdf:
         meta = pdf.infodict()
-        meta["Title"]   = "Agri-Trust v2 Model Training Report"
+        meta["Title"]   = "Agri-Trust v3 Model Training Report"
         meta["Author"]  = "Agri-Trust AI Pipeline"
-        meta["Subject"] = "YOLOv8n Tomato Grading — 7 Classes"
+        meta["Subject"] = "YOLOv8n Tomato Grading — 7 Classes (Warm-Start v3)"
         meta["Keywords"]= "YOLOv8, Tomato, Grading, Object Detection, Jetson Nano"
 
         print("  Page 1/4 — Cover...")
