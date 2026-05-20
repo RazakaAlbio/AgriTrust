@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { Search, ShieldCheck, ShieldX, Copy, ExternalLink, AlertTriangle, Scale, Wind, Microscope, User, Calendar, MapPin, CheckCircle2, Package, Cpu, Link2, Cloud } from "lucide-react";
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Search, ShieldCheck, ShieldX, Copy, ExternalLink, AlertTriangle, Scale, Wind, Microscope, User, Calendar, MapPin, QrCode, X } from "lucide-react";
 import { type AIClass, type Grade, getGradeInfo, buildTxUrl } from "@/lib/grading";
 
 interface Detection { aiClass: AIClass; confidence: number; count: number; }
@@ -31,23 +31,18 @@ const DEMO_BATCHES: Record<string, ScanRecord> = {
   },
 };
 
-const TIMELINE = [
-  { icon: Package, label: "Harvested", time: "06:12", done: true },
-  { icon: Cpu, label: "AI Graded", time: "06:14", done: true },
-  { icon: Link2, label: "Hash Created", time: "06:14", done: true },
-  { icon: Cloud, label: "Blockchain Logged", time: "06:15", done: true },
-];
-
 export default function VerifyTab() {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<ScanRecord | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
 
   const handleSearch = () => {
     const q = query.trim().toUpperCase();
     const found = DEMO_BATCHES[q] ?? Object.values(DEMO_BATCHES).find(b => b.batchId.includes(q));
-    if (found) { setResult(found); setNotFound(false); }
+    if (found) { setResult(found); setNotFound(false); setShowQRScanner(false); }
     else { setResult(null); setNotFound(true); }
   };
 
@@ -56,126 +51,232 @@ export default function VerifyTab() {
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
+  // Simulate scanning a QR code successfully after 3 seconds
+  useEffect(() => {
+    if (showQRScanner) {
+      setIsScanning(true);
+      const timer = setTimeout(() => {
+        setQuery("BATCH_2024_0846");
+        setIsScanning(false);
+        // Auto search after a brief pause so user sees the text populate
+        setTimeout(() => {
+          const found = DEMO_BATCHES["BATCH_2024_0846"];
+          setResult(found);
+          setNotFound(false);
+          setShowQRScanner(false);
+        }, 800);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showQRScanner]);
+
   return (
-    <div className="border border-border border-t-0">
-      {/* Search */}
-      <div className="p-4 border-b border-border">
-        <p className="data-label">Search Batch / Scan QR Code</p>
+    <div className="border border-border border-t-0 flex flex-col min-h-[600px] bg-background">
+      {/* Search Bar & Actions */}
+      <div className="p-4 border-b border-border bg-secondary/10">
+        <p className="data-label mb-2">Search Batch / Scan Product QR</p>
         <div className="flex flex-col sm:flex-row gap-2">
-          <input value={query} onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleSearch()}
-            placeholder="e.g. BATCH_2024_0847"
-            className="flex-1 bg-background border border-border px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
-          <button onClick={handleSearch}
-            className="btn-rugged flex items-center gap-1.5 px-4 py-2 text-sm">
-            <Search className="w-4 h-4" /> Search
-          </button>
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input 
+              value={query} 
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSearch()}
+              placeholder="e.g. BATCH_2024_0847"
+              className="w-full bg-background border border-border pl-9 pr-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" 
+            />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleSearch} className="btn-rugged flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-6 py-2 text-sm">
+              Verify
+            </button>
+            <button 
+              onClick={() => setShowQRScanner(!showQRScanner)}
+              className={`flex items-center justify-center gap-2 px-4 py-2 border transition-colors ${
+                showQRScanner ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <QrCode className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         {notFound && <p className="text-xs text-destructive mt-2">Batch not found. Try: BATCH_2024_0847</p>}
       </div>
 
-      {/* Result */}
-      {result && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="divide-y divide-border">
-          {/* Grade stamp */}
-          <div className={`p-4 flex items-center gap-3 ${result.overallGrade === "Reject" ? "bg-destructive/10" : "bg-success/10"}`}>
-            {result.overallGrade === "Reject"
-              ? <ShieldX className="w-8 h-8 text-destructive" />
-              : <ShieldCheck className="w-8 h-8 text-green-400" />}
-            <div>
-              <p className="font-mono text-xl font-bold tracking-tighter text-foreground">{result.overallGrade}</p>
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{result.batchId} · {result.timestamp}</p>
-            </div>
-          </div>
-
-          {/* Detections */}
-          <div>
-            <div className="p-3 border-b border-border flex items-center gap-2">
-              <Microscope className="w-3.5 h-3.5 text-muted-foreground" />
-              <p className="data-label !mb-0">AI Detections</p>
-            </div>
-            {result.detections.filter(d => getGradeInfo(d.aiClass).critical).length > 0 && (
-              <div className="p-3 border-b border-destructive bg-destructive/10 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-destructive" />
-                <p className="text-xs text-destructive font-bold uppercase tracking-widest">Critical defect found</p>
+      {/* Main Content Area */}
+      <div className="relative flex-1">
+        
+        {/* Simulated Camera Overlay */}
+        <AnimatePresence>
+          {showQRScanner && (
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-20 bg-black/95 flex flex-col items-center justify-center p-4"
+            >
+              <button 
+                onClick={() => setShowQRScanner(false)} 
+                className="absolute top-4 right-4 p-2 text-white/50 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              
+              <div className="text-center mb-6">
+                <p className="font-mono text-sm text-white font-bold mb-1">CAMERA ACTIVE</p>
+                <p className="text-xs text-white/50">Point your camera at the Agri-Trust product QR code.</p>
               </div>
-            )}
-            {result.detections.map(det => {
-              const info = getGradeInfo(det.aiClass);
-              return (
-                <div key={det.aiClass} className="p-3 flex items-center justify-between border-b border-border last:border-b-0">
-                  <div className="flex items-center gap-2">
-                    <span>{info.emoji}</span>
-                    <div>
-                      <p className={`text-sm font-bold ${info.textClass}`}>
-                        {info.label}
-                        {info.critical && <span className="ml-1 text-[9px] bg-red-700/30 text-red-400 px-1 py-0.5">CRITICAL</span>}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">×{det.count}</p>
+
+              {/* Viewfinder Frame */}
+              <div className="relative w-64 h-64 border-2 border-white/20 rounded-lg overflow-hidden">
+                {/* Scanning Laser */}
+                {isScanning && (
+                  <motion.div 
+                    animate={{ y: [0, 250, 0] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    className="absolute top-0 left-0 right-0 h-1 bg-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.8)] z-10"
+                  />
+                )}
+                {/* Corner Accents */}
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary" />
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary" />
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary" />
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary" />
+                
+                {/* Fake camera feed background */}
+                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1595858603623-86873531b7f0?q=80&w=400&auto=format&fit=crop')] bg-cover bg-center opacity-30 mix-blend-luminosity" />
+              </div>
+              
+              <div className="mt-6 flex items-center gap-2">
+                {isScanning ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
+                    <span className="text-[10px] uppercase tracking-widest text-primary">Scanning...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-green-400" />
+                    <span className="text-[10px] uppercase tracking-widest text-green-400">QR Code Detected</span>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Result Data */}
+        {result ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="divide-y divide-border h-full">
+            {/* Grade stamp */}
+            <div className={`p-6 flex items-center gap-4 ${result.overallGrade === "Reject" ? "bg-destructive/10" : "bg-success/10"}`}>
+              {result.overallGrade === "Reject"
+                ? <ShieldX className="w-10 h-10 text-destructive" />
+                : <ShieldCheck className="w-10 h-10 text-green-400" />}
+              <div>
+                <p className="font-mono text-2xl font-bold tracking-tighter text-foreground">{result.overallGrade}</p>
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">{result.batchId} · {result.timestamp}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+              {/* Left Col: Detections */}
+              <div>
+                <div className="p-4 border-b border-border flex items-center gap-2 bg-secondary/10">
+                  <Microscope className="w-4 h-4 text-muted-foreground" />
+                  <p className="data-label !mb-0">AI Detections</p>
+                </div>
+                {result.detections.filter(d => getGradeInfo(d.aiClass).critical).length > 0 && (
+                  <div className="p-3 border-b border-destructive bg-destructive/10 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-destructive" />
+                    <p className="text-xs text-destructive font-bold uppercase tracking-widest">Critical defect found</p>
+                  </div>
+                )}
+                {result.detections.map(det => {
+                  const info = getGradeInfo(det.aiClass);
+                  return (
+                    <div key={det.aiClass} className="p-4 flex items-center justify-between border-b border-border last:border-b-0">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{info.emoji}</span>
+                        <div>
+                          <p className={`text-sm font-bold ${info.textClass}`}>
+                            {info.label}
+                            {info.critical && <span className="ml-2 text-[9px] bg-red-700/30 text-red-400 px-1 py-0.5">CRITICAL</span>}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">×{det.count}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={`font-mono text-sm font-bold ${info.textClass}`}>{info.grade}</p>
+                        <p className="text-[10px] text-muted-foreground">{(det.confidence * 100).toFixed(0)}%</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={`font-mono text-sm font-bold ${info.textClass}`}>{info.grade}</p>
-                    <p className="text-[10px] text-muted-foreground">{(det.confidence * 100).toFixed(0)}%</p>
+                  );
+                })}
+              </div>
+
+              {/* Right Col: Origin & Blockchain */}
+              <div className="divide-y divide-border">
+                {/* Sensors */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border border-b border-border">
+                  {[
+                    { label: "Weight", v: result.sensors.weight, icon: Scale },
+                    { label: "Gas / VOC", v: result.sensors.gas_ppm, icon: Wind },
+                  ].map(s => (
+                    <div key={s.label} className="p-4 bg-secondary/5">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <s.icon className="w-4 h-4 text-muted-foreground" />
+                        <p className="data-label !mb-0">{s.label}</p>
+                      </div>
+                      <p className="text-xl font-mono font-bold text-foreground">{s.v.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Origin */}
+                <div className="p-4 space-y-4">
+                  {[
+                    { icon: User, label: "Farmer", value: result.farmer },
+                    { icon: Calendar, label: "Harvest", value: result.harvestDate },
+                    { icon: MapPin, label: "Location", value: result.location },
+                  ].map(item => (
+                    <div key={item.label} className="flex items-start gap-3">
+                      <item.icon className="w-4 h-4 text-muted-foreground mt-0.5" />
+                      <div>
+                        <p className="data-label">{item.label}</p>
+                        <p className="text-sm font-medium text-foreground">{item.value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Blockchain */}
+                <div className="p-4 bg-secondary/10">
+                  <p className="data-label mb-3">Blockchain Integrity</p>
+                  <div className="space-y-3">
+                    <div className="bg-background border border-border p-3 flex items-center gap-2">
+                      <code className="font-mono text-xs text-muted-foreground break-all flex-1">
+                        {result.txHash ? `${result.txHash.slice(0, 32)}...` : `${result.batchId} — hash pending`}
+                      </code>
+                      <button onClick={copyHash} className="text-muted-foreground hover:text-primary transition-colors p-1"><Copy className="w-4 h-4" /></button>
+                    </div>
+                    {copied && <p className="text-[10px] text-primary uppercase tracking-widest text-right">Copied</p>}
+                    <a href={buildTxUrl(result.txHash)} target="_blank" rel="noopener noreferrer"
+                      className="btn-rugged w-full flex items-center justify-center gap-2 min-h-[44px] text-sm">
+                      <ExternalLink className="w-4 h-4" /> Verify on Polygon Explorer
+                    </a>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Sensors */}
-          <div className="grid grid-cols-1 sm:grid-cols-2">
-            {[
-              { label: "Weight", v: result.sensors.weight, icon: Scale },
-              { label: "Gas / VOC", v: result.sensors.gas_ppm, icon: Wind },
-            ].map(s => (
-              <div key={s.label} className="data-cell">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <s.icon className="w-3.5 h-3.5 text-muted-foreground" />
-                  <p className="data-label !mb-0">{s.label}</p>
-                </div>
-                <p className="data-value">{s.v.value}</p>
               </div>
-            ))}
-          </div>
-
-          {/* Origin */}
-          <div>
-            {[
-              { icon: User, label: "Farmer", value: result.farmer },
-              { icon: Calendar, label: "Harvest", value: result.harvestDate },
-              { icon: MapPin, label: "Location", value: result.location },
-            ].map(item => (
-              <div key={item.label} className="p-3 flex items-center gap-3 border-b border-border last:border-b-0">
-                <item.icon className="w-4 h-4 text-muted-foreground" />
-                <div><p className="data-label">{item.label}</p><p className="text-sm text-foreground">{item.value}</p></div>
-              </div>
-            ))}
-          </div>
-
-          {/* Blockchain */}
-          <div className="p-4 space-y-2">
-            <div className="bg-background border border-border p-3 flex items-center gap-2">
-              <code className="font-mono text-xs text-muted-foreground break-all flex-1">
-                {result.txHash ? `${result.txHash.slice(0, 32)}...` : `${result.batchId} — hash pending`}
-              </code>
-              <button onClick={copyHash} className="text-muted-foreground hover:text-primary p-2"><Copy className="w-4 h-4" /></button>
             </div>
-            {copied && <p className="text-[10px] text-primary uppercase tracking-widest">Copied</p>}
-            <a href={buildTxUrl(result.txHash)} target="_blank" rel="noopener noreferrer"
-              className="btn-rugged w-full flex items-center justify-center gap-2 min-h-[44px] text-sm">
-              <ExternalLink className="w-4 h-4" /> Verify on Blockchain
-            </a>
+          </motion.div>
+        ) : !notFound && !showQRScanner && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-secondary/5">
+            <Search className="w-12 h-12 text-muted-foreground opacity-20 mb-4" />
+            <p className="text-lg font-bold text-foreground mb-1">Verify Product Authenticity</p>
+            <p className="text-sm text-muted-foreground max-w-sm">Enter a specific Batch ID manually, or click the QR Code icon to scan the product label with your camera.</p>
           </div>
-        </motion.div>
-      )}
-
-      {!result && !notFound && (
-        <div className="p-12 text-center">
-          <Search className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Enter a Batch ID or scan a QR code to view product details</p>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
