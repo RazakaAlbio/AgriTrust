@@ -77,16 +77,17 @@ export default function HistoryTab() {
 
   const handleExport = (scan: ScanRow) => {
     generateCertificatePDF({
-      batchId: scan.batchId,
-      result: scan.grade, 
-      quality: Math.round(scan.conf * 100),
-      farmer: scan.farmer, 
-      date: scan.time.split(',')[0], 
+      batchId:  scan.batchId,
+      result:   scan.grade,
+      quality:  Math.round(scan.conf * 100),
+      farmer:   scan.farmer,
+      date:     scan.time.split(',')[0],
       location: "Verified by Agri-Trust",
-      hash: scan.synced ? "Synced on Polygon" : "Pending", 
-      sensors: { weight: "See details", voc: "See details", rgb: "", temp: "" },
+      txHash:   "",   // tx_hash not fetched in list view — open detail to verify
+      sensors:  { weight: "See scan details", gas_ppm: "See scan details" },
     });
   };
+
 
   return (
     <div className="border border-border border-t-0 bg-background">

@@ -52,7 +52,7 @@ interface ScanRecord {
   globalSync: "cloud" | "local";
 }
 
-// ── Demo data (DEMO label shown in UI until Azure backend is live) ──────────
+// ── Demo data (shown until Supabase query is wired to ConsumerVerification) ──
 const DEMO_DATA: ScanRecord = {
   batchId: "BATCH_2024_0847",
   timestamp: "Dec 15, 2024 · 14:02:31 UTC",
@@ -66,7 +66,7 @@ const DEMO_DATA: ScanRecord = {
     weight:  { value: "1.24 kg", ok: true },
     gas_ppm: { value: "142 ppm", ok: true },
   },
-  txHash: undefined,    // no real tx yet — linked after Polygon Amoy setup
+  txHash: undefined,    // populated once the scan is anchored on Polygon Amoy
   farmer: "Ahmad Rizal",
   harvestDate: "2024-12-15",
   location: "Bandung, West Java",
@@ -339,40 +339,47 @@ export default function ConsumerVerification() {
           transition={{ delay: 0.5, duration: 0.4, ease: [0.2, 1, 0.3, 1] as const }}
           className="border border-border border-t-0"
         >
-          <div className="border-b border-border p-3">
+          <div className="border-b border-border p-3 flex items-center justify-between">
             <p className="data-label !mb-0">Digital Fingerprint (SHA-256)</p>
+            <span className={`text-[9px] uppercase tracking-widest font-bold px-1.5 py-0.5 border ${
+              data.txHash
+                ? "border-green-500/50 text-green-400 bg-green-500/10"
+                : "border-orange-500/50 text-orange-400 bg-orange-500/10 animate-pulse"
+            }`}>
+              {data.txHash ? "Anchored" : "Pending"}
+            </span>
           </div>
           <div className="p-4 space-y-3">
             <div className="bg-background border border-border p-3 flex items-center gap-2">
               <code className="font-mono text-xs text-muted-foreground break-all flex-1">
                 {data.txHash
-                  ? `${data.txHash.slice(0, 32)}...`
-                  : `${data.batchId} — hash pending blockchain setup`}
+                  ? data.txHash
+                  : "Hash not yet anchored to blockchain"}
               </code>
-              <button
-                onClick={copyHash}
-                className="text-muted-foreground hover:text-primary transition-colors shrink-0 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
-              >
-                <Copy className="w-5 h-5" />
-              </button>
+              {data.txHash && (
+                <button
+                  onClick={copyHash}
+                  className="text-muted-foreground hover:text-primary transition-colors shrink-0 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                >
+                  <Copy className="w-5 h-5" />
+                </button>
+              )}
             </div>
             {copied && (
               <p className="text-[10px] uppercase tracking-widest text-primary">
                 Copied to clipboard
               </p>
             )}
-            {/* Blockchain verify button — links to explorer, tx hash added post Polygon setup */}
             <a
               href={buildTxUrl(data.txHash)}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-rugged w-full flex items-center justify-center gap-2 min-h-[48px] text-sm"
+              className={`btn-rugged w-full flex items-center justify-center gap-2 min-h-[48px] text-sm ${
+                !data.txHash ? "opacity-60" : ""
+              }`}
             >
               <ExternalLink className="w-4 h-4" />
-              Verify on Blockchain
-              {!data.txHash && (
-                <span className="text-[9px] opacity-70 ml-1">(explorer)</span>
-              )}
+              {data.txHash ? "Verify on PolygonScan" : "Pending Blockchain Anchor"}
             </a>
           </div>
         </motion.div>
@@ -410,7 +417,7 @@ export default function ConsumerVerification() {
             Agri-Trust · Decentralized Edge-AI Grading Hub
           </p>
           <p className="text-[9px] text-muted-foreground/50">
-            v3 Model · YOLOv8n · 78.0% mAP@50 · Polygon Amoy Testnet
+            v3 Model · YOLOv8n · 78.0% mAP@50 · Polygon Amoy · AgriTrustGrading.sol
           </p>
         </div>
       </div>

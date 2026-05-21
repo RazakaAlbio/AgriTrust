@@ -445,7 +445,11 @@ agritrust-hub-main/
 - **[✅] TTA validation** — tested, TTA gave -0.75% (not used in deployment)
 - **[✅] Training report** — `python/outputs/agritrust_v3_report.pdf` with real validated numbers
 - **[✅] `generate_report.py` per-class metrics** — updated to real validated values
-- **[✅] README** — comprehensive project documentation written
+- **[✅] AgriTrustGrading.sol deployed** — Custom Solidity contract on Polygon Amoy (`0x12b24ac3547a901c7e8d7eef423c4c3ec4f319dd`). Stores SHA-256 grading hashes with owner + device access control.
+- **[✅] Thirdweb v5 SDK integrated** — `anchorGradingRecord()` in `blockchain.ts` hashes payload via Web Crypto API and sends tx via `sendAndConfirmTransaction`. TX hash written back to Supabase `scans.tx_hash`.
+- **[✅] Admin Blockchain Tab** — Fourth tab in AdminPanel: wallet connect (MetaMask/WalletConnect), lists unsynced scans, one-click "Anchor to Chain" per row, shows result with PolygonScan link.
+- **[✅] Consumer verification updated** — Real `tx_hash` shown with Anchored/Pending status badge, button label changes to "Verify on PolygonScan" when anchored.
+- **[✅] PDF Certificate updated** — Real TX hash + `amoy.polygonscan.com/tx/...` URL printed in certificate.
 - **[✅] `.gitignore`** — large artifacts excluded (datasets, runs, exports, outputs)
 
 ### 🟢 Nice to Have
@@ -462,8 +466,8 @@ When the full system is ready for deployment, complete these steps in order:
 ```
 [x] 1. Set up Database schema and Supabase Auth
 [x] 2. Integrate Web Dashboard with Supabase via @supabase/supabase-js
-[ ] 3. Register Polygon Amoy wallet, deploy grading smart contract
-[ ] 4. Wire Thirdweb/Tatum API to anchor hashes on-chain
+[x] 3. Register Polygon Amoy wallet, deploy grading smart contract
+[x] 4. Wire Thirdweb/Tatum API to anchor hashes on-chain
 [ ] 5. Transfer best.pt to Jetson Nano
 [ ] 6. Run export_tensorrt.py on Jetson Nano → get best.engine
 [ ] 7. Flash ESP32 firmware (HX711 + MQ-135)
