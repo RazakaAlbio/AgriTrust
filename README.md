@@ -15,9 +15,10 @@
 5. [Blockchain Layer](#5-blockchain-layer)
 6. [IoT Hardware & Firmware](#6-iot-hardware--firmware)
 7. [Indonesian Tomato Price Reference](#7-indonesian-tomato-price-reference)
-8. [Getting Started](#8-getting-started)
-9. [Project Structure](#9-project-structure)
-10. [⚠️ Known Issues & TODO](#10-️-known-issues--todo)
+8. [Sensor Fusion Grading Logic (Edge AI)](#8-sensor-fusion-grading-logic-edge-ai)
+9. [Getting Started](#9-getting-started)
+10. [Project Structure](#10-project-structure)
+11. [⚠️ Known Issues & TODO](#11-️-known-issues--todo)
 
 ---
 
@@ -411,7 +412,52 @@ Tomato prices in Indonesia are highly volatile (±30% swing) due to:
 
 ---
 
-## 8. Getting Started
+## 8. Sensor Fusion Grading Logic (Edge AI)
+
+The grading decision is processed directly on the **Jetson Nano (Edge)** using a combination of the AI Vision model, Weight sensor, and Gas sensor. This allows the system to determine a highly accurate final grade rather than relying entirely on visual data.
+
+### Input Parameters (Thresholds)
+
+**1. AI Visual Classes (YOLOv8)**
+- Classes defined in `python/train.py`: `blossom_end_rot`, `fruit_cracking`, `half_ripe`, `mold`, `ripe`, `rotten`, `unripe`.
+- Critical Safety Classes (Immediate Reject): `mold`, `rotten`, `blossom_end_rot`, `fruit_cracking`.
+
+**2. Weight Thresholds (SNI 01-3546-2004 Standard)**
+Based on the Indonesian National Standard for tomatoes:
+- **Grade A (Besar / Premium):** > 150 gram per tomato (> 0.15 kg).
+- **Grade B (Sedang / Standar):** 100 – 150 gram per tomato (0.10 – 0.15 kg).
+- **Grade C (Kecil / Lokal):** < 100 gram per tomato (< 0.10 kg).
+
+**3. Gas / VOC Sensor (MQ-135)**
+- **Baseline (Clean Air):** ~10 - 50 ppm.
+- **Spoilage / Rot Threshold:** > 150 ppm (indicates significant release of VOCs/Ethylene during decay).
+
+### Proposed Fusion Logic (Python snippet example)
+```python
+def calculate_final_grade(ai_detections, total_weight_kg, gas_ppm):
+    tomato_count = sum(ai_detections.values())
+    avg_weight = total_weight_kg / tomato_count if tomato_count > 0 else 0
+    
+    # 1. Check for Critical Rejects
+    if ai_detections.get("mold", 0) > 0 or ai_detections.get("rotten", 0) > 0:
+        return "Reject"
+    if gas_ppm > 150:
+        return "Reject" # High VOC/Decay gases detected
+        
+    # 2. Determine Grade
+    is_fully_ripe = ai_detections.get("ripe", 0) == tomato_count
+    
+    if is_fully_ripe and avg_weight >= 0.15 and gas_ppm < 100:
+        return "Grade A"
+    elif avg_weight >= 0.10 and gas_ppm < 120:
+        return "Grade B"
+    else:
+        return "Grade C"
+```
+
+---
+
+## 9. Getting Started
 
 ### Prerequisites
 
@@ -462,7 +508,7 @@ tensorboard --logdir python/runs
 
 ---
 
-## 9. Project Structure
+## 10. Project Structure
 
 ```
 agritrust-hub-main/
@@ -519,7 +565,7 @@ agritrust-hub-main/
 
 ---
 
-## 10. ⚠️ Known Issues & TODO
+## 11. ⚠️ Known Issues & TODO
 
 ### 🔴 Critical — Must Fix Before Deployment
 
