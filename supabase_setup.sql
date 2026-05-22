@@ -60,6 +60,12 @@ CREATE POLICY "Enable update for authenticated users" ON public.devices FOR UPDA
 -- or a specific JWT to insert into the `scans` table. For this demo, we allow authenticated users.
 CREATE POLICY "Enable insert for authenticated users" ON public.scans FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
+-- ⚠️  CRITICAL PATCH — Run this if tx_hash is never persisting after blockchain anchoring.
+-- The scans UPDATE policy was missing, causing Supabase RLS to silently block tx_hash writes.
+CREATE POLICY "Enable update for authenticated users" ON public.scans FOR UPDATE USING (auth.role() = 'authenticated');
+
+
+
 -- 7. Insert Mock Data (Optional, just to test the frontend)
 INSERT INTO public.farmers (id, rfid_tag, name, location, group_class)
 VALUES 

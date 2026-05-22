@@ -112,30 +112,42 @@ export function generateCertificatePDF(data: CertificateData) {
   doc.setFontSize(8);
   doc.setTextColor(153, 153, 153);
   doc.text("BLOCKCHAIN PROOF (POLYGON AMOY)", 20, oy);
-  oy += 10;
+  oy += 4;
 
+  // Determine box height: 2 lines for hash, or 1 line for pending
+  const boxH = data.txHash ? 22 : 12;
   doc.setFillColor(26, 26, 26);
   doc.setDrawColor(51, 51, 51);
-  doc.rect(20, oy - 5, w - 40, 12, "FD");
+  doc.rect(20, oy, w - 40, boxH, "FD");
   doc.setFont("courier", "normal");
   doc.setFontSize(7);
 
   if (data.txHash) {
+    // Split hash across 2 lines so it fits in the A4 width
+    const half = Math.ceil(data.txHash.length / 2);
+    const line1 = data.txHash.slice(0, half);
+    const line2 = data.txHash.slice(half);
     doc.setTextColor(255, 140, 0);
-    doc.text(`TX: ${data.txHash}`, 24, oy + 2);
+    doc.text(`TX: ${line1}`, 24, oy + 7);
+    doc.text(`    ${line2}`, 24, oy + 14);
   } else {
     doc.setTextColor(120, 120, 120);
-    doc.text("Pending blockchain anchor — not yet on-chain", 24, oy + 2);
+    doc.text("Pending blockchain anchor — not yet on-chain", 24, oy + 7);
   }
   doc.setFont("helvetica", "bold");
+  oy += boxH + 6;
 
   // PolygonScan URL
-  oy += 16;
   if (data.txHash) {
     doc.setFontSize(7);
     doc.setTextColor(100, 120, 255);
-    doc.text(`Verify: ${AMOY_EXPLORER}/tx/${data.txHash}`, 20, oy);
-    oy += 8;
+    // Split URL into label + hash so it doesn't overflow
+    doc.text(`Verify on Polygon Amoy:`, 20, oy);
+    oy += 5;
+    doc.setFont("courier", "normal");
+    doc.text(`${AMOY_EXPLORER}/tx/${data.txHash}`, 20, oy, { maxWidth: w - 40 });
+    doc.setFont("helvetica", "bold");
+    oy += 10;
   }
 
   // Bottom bar

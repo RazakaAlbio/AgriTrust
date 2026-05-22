@@ -195,14 +195,21 @@ export async function anchorGradingRecord(
   const explorerUrl = `https://amoy.polygonscan.com/tx/${txHash}`;
 
   // 5. Write tx_hash back to Supabase
-  const { error } = await supabase
+  const { error: dbError } = await supabase
     .from("scans")
     .update({ tx_hash: txHash })
     .eq("id", supabaseScanId);
 
-  if (error) {
-    console.error("[AgriTrust] Failed to update tx_hash in Supabase:", error);
-    // Don't throw — the chain anchor succeeded even if Supabase update fails
+  if (dbError) {
+    // The blockchain anchor succeeded but the DB write failed.
+    // Most common cause: missing UPDATE policy in Supabase RLS for the scans table.
+    // Throw so the caller can surface this to the user with the txHash for manual recovery.
+    throw new Error(
+      `SUPABASE_UPDATE_FAILED|${txHash}|${sha256Hex}|` +
+      `Blockchain anchor succeeded (TX: ${txHash.slice(0, 18)}…) but ` +
+      `saving tx_hash to Supabase failed: ${dbError.message}. ` +
+      `Add an UPDATE RLS policy on the scans table (see supabase_setup.sql).`
+    );
   }
 
   return { txHash, sha256Hex, explorerUrl };

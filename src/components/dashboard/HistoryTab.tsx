@@ -4,6 +4,7 @@ import { ExternalLink, FileDown, AlertTriangle } from "lucide-react";
 import { generateCertificatePDF } from "@/lib/generateCertificate";
 import { getGradeInfo, type Grade } from "@/lib/grading";
 import { supabase } from "@/lib/supabase";
+import { buildBlockchainTxUrl } from "@/lib/blockchain";
 
 interface ScanRow {
   id: string; 
@@ -15,6 +16,9 @@ interface ScanRow {
   critical?: boolean; 
   farmer: string;
   aiClass: string;
+  txHash?: string;
+  weightKg?: number | null;
+  gasPpm?: number | null;
 }
 
 export default function HistoryTab() {
@@ -37,7 +41,9 @@ export default function HistoryTab() {
           confidence_score,
           tx_hash,
           ai_detections,
-          farmers (name)
+          weight_kg,
+          gas_ppm,
+          farmers (name, location)
         `)
         .order('created_at', { ascending: false });
 
@@ -56,7 +62,10 @@ export default function HistoryTab() {
             synced: !!row.tx_hash,
             critical: row.overall_grade === "Reject",
             farmer: row.farmers?.name || "Unknown",
-            aiClass: primaryDet ? primaryDet.aiClass : "unknown"
+            aiClass: primaryDet ? primaryDet.aiClass : "unknown",
+            txHash: row.tx_hash ?? undefined,
+            weightKg: row.weight_kg ?? null,
+            gasPpm: row.gas_ppm ?? null,
           };
         });
 
@@ -83,8 +92,11 @@ export default function HistoryTab() {
       farmer:   scan.farmer,
       date:     scan.time.split(',')[0],
       location: "Verified by Agri-Trust",
-      txHash:   "",   // tx_hash not fetched in list view — open detail to verify
-      sensors:  { weight: "See scan details", gas_ppm: "See scan details" },
+      txHash:   scan.txHash ?? "",
+      sensors:  {
+        weight:  scan.weightKg != null ? `${scan.weightKg} kg` : "N/A",
+        gas_ppm: scan.gasPpm  != null ? `${scan.gasPpm} ppm`  : "N/A",
+      },
     });
   };
 
@@ -156,7 +168,21 @@ export default function HistoryTab() {
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="p-1.5 text-muted-foreground hover:text-primary transition-colors border border-transparent hover:border-border"><ExternalLink className="w-3.5 h-3.5" /></button>
+                        {scan.txHash ? (
+                          <a
+                            href={buildBlockchainTxUrl(scan.txHash)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="View TX on PolygonScan"
+                            className="p-1.5 text-primary hover:text-primary/80 transition-colors border border-transparent hover:border-border"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        ) : (
+                          <span className="p-1.5 text-muted-foreground/30 cursor-not-allowed" title="Not yet anchored on-chain">
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </span>
+                        )}
                         <button onClick={() => handleExport(scan)} className="p-1.5 text-muted-foreground hover:text-primary transition-colors border border-transparent hover:border-border"><FileDown className="w-3.5 h-3.5" /></button>
                       </div>
                     </td>
@@ -194,9 +220,20 @@ export default function HistoryTab() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 pt-2 border-t border-border/50">
-                    <button className="flex-1 btn-rugged py-1.5 text-[10px] flex items-center justify-center gap-1">
-                      <ExternalLink className="w-3 h-3" /> Verify
-                    </button>
+                    {scan.txHash ? (
+                      <a
+                        href={buildBlockchainTxUrl(scan.txHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 btn-rugged py-1.5 text-[10px] flex items-center justify-center gap-1"
+                      >
+                        <ExternalLink className="w-3 h-3" /> View TX
+                      </a>
+                    ) : (
+                      <span className="flex-1 btn-rugged py-1.5 text-[10px] flex items-center justify-center gap-1 opacity-40 cursor-not-allowed">
+                        <ExternalLink className="w-3 h-3" /> Pending
+                      </span>
+                    )}
                     <button onClick={() => handleExport(scan)} className="flex-1 btn-rugged py-1.5 text-[10px] flex items-center justify-center gap-1">
                       <FileDown className="w-3 h-3" /> Certificate
                     </button>

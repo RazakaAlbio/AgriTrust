@@ -329,10 +329,21 @@ export default function VerifyTab() {
                       <button onClick={copyHash} className="text-muted-foreground hover:text-primary transition-colors p-1"><Copy className="w-4 h-4" /></button>
                     </div>
                     {copied && <p className="text-[10px] text-primary uppercase tracking-widest text-right">Copied</p>}
-                    <a href={buildTxUrl(result.txHash)} target="_blank" rel="noopener noreferrer"
-                      className="btn-rugged w-full flex items-center justify-center gap-2 min-h-[44px] text-sm">
-                      <ExternalLink className="w-4 h-4" /> Verify on Polygon Explorer
-                    </a>
+                    {result.txHash ? (
+                      <a
+                        href={buildTxUrl(result.txHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-rugged w-full flex items-center justify-center gap-2 min-h-[44px] text-sm"
+                      >
+                        <ExternalLink className="w-4 h-4" /> Verify on Polygon Explorer
+                      </a>
+                    ) : (
+                      <div className="w-full flex items-center justify-center gap-2 min-h-[44px] text-sm border border-border text-muted-foreground/50 cursor-not-allowed bg-secondary/20">
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Not yet anchored on-chain</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

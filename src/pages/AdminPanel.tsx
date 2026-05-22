@@ -16,10 +16,13 @@ import { polygonAmoy } from "thirdweb/chains";
 import { thirdwebClient } from "@/lib/thirdweb";
 import {
   anchorGradingRecord,
+  verifyBatchOnChain,
   CONTRACT_ADDRESS,
   buildBlockchainTxUrl,
   type GradingPayload,
 } from "@/lib/blockchain";
+
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface UnsyncedScan {
@@ -41,6 +44,10 @@ function BlockchainTabContent() {
   const [results, setResults] = useState<Record<string, { txHash: string; sha256Hex: string }>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Recover flow: for scans already on-chain but missing tx_hash in DB
+  const [recoverId, setRecoverId] = useState<string | null>(null);
+  const [recoverTxInput, setRecoverTxInput] = useState("");
+  const [isRecovering, setIsRecovering] = useState(false);
 
   const fetchUnsynced = async () => {
     setIsLoading(true);
@@ -100,15 +107,73 @@ function BlockchainTabContent() {
       setScans(prev => prev.filter(s => s.id !== scan.id));
     } catch (err: any) {
       console.error(err);
-      setError(
-        err?.message?.includes("already anchored")
-          ? `Batch ${scan.batchId} is already anchored on-chain.`
-          : `Failed to anchor ${scan.batchId}: ${err?.message ?? "Unknown error"}`
-      );
+      const msg: string = err?.message ?? "";
+
+      // Detect the structured SUPABASE_UPDATE_FAILED error
+      if (msg.startsWith("SUPABASE_UPDATE_FAILED|")) {
+        const parts = msg.split("|");
+        const txHash   = parts[1] ?? "";
+        const sha256Hex = parts[2] ?? "";
+        const detail   = parts.slice(3).join("|");
+        // Blockchain anchor DID succeed — show the result but warn about DB
+        setResults(prev => ({ ...prev, [scan.id]: { txHash, sha256Hex } }));
+        setScans(prev => prev.filter(s => s.id !== scan.id));
+        setError(
+          `⚠️ Blockchain anchor succeeded but Supabase could not save the tx_hash. ` +
+          `You must add an UPDATE policy on the scans table in Supabase. ` +
+          `Run the SQL patch in supabase_setup.sql (see README or below). ` +
+          `TX saved: ${txHash}`
+        );
+      } else if (msg.includes("already anchored")) {
+        // Scan is confirmed on-chain but tx_hash missing in Supabase — enter recover mode
+        setError(null);
+        setRecoverId(scan.id);
+        setRecoverTxInput("");
+      } else {
+        setError(`Failed to anchor ${scan.batchId}: ${msg || "Unknown error"}`);
+      }
     } finally {
       setAnchoringId(null);
     }
   };
+
+  // Save a manually-entered tx_hash to Supabase for an already-anchored scan
+  const handleRecover = async (scan: UnsyncedScan) => {
+    const txHash = recoverTxInput.trim();
+    if (!txHash.startsWith("0x") || txHash.length < 10) {
+      setError("Please enter a valid tx hash starting with 0x");
+      return;
+    }
+    setIsRecovering(true);
+    setError(null);
+    try {
+      // Verify it really is on-chain
+      const onChain = await verifyBatchOnChain(scan.batchId);
+      if (!onChain.exists) {
+        setError(`Batch ${scan.batchId} is NOT found on-chain. Double-check the tx hash and batch ID.`);
+        setIsRecovering(false);
+        return;
+      }
+      // Save to Supabase
+      const { error: dbErr } = await supabase
+        .from("scans")
+        .update({ tx_hash: txHash })
+        .eq("id", scan.id);
+      if (dbErr) {
+        setError(`On-chain confirmed but Supabase update failed: ${dbErr.message}. Make sure the UPDATE RLS policy is applied (run supabase_rls_patch.sql).`);
+      } else {
+        setResults(prev => ({ ...prev, [scan.id]: { txHash, sha256Hex: onChain.sha256Hash } }));
+        setScans(prev => prev.filter(s => s.id !== scan.id));
+        setRecoverId(null);
+        setRecoverTxInput("");
+      }
+    } catch (err: any) {
+      setError(`Recovery failed: ${err?.message ?? "Unknown error"}`);
+    } finally {
+      setIsRecovering(false);
+    }
+  };
+
 
   const copyTx = (id: string, txHash: string) => {
     navigator.clipboard.writeText(txHash);
@@ -250,42 +315,96 @@ function BlockchainTabContent() {
                 key={scan.id}
                 initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.04 }}
-                className="p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"
+                className="p-4 flex flex-col gap-3"
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-mono text-sm font-bold text-foreground">{scan.batchId}</p>
-                    <span className={`text-[9px] uppercase tracking-widest font-bold px-1.5 py-0.5 border ${
-                      scan.overallGrade === "Reject"
-                        ? "border-destructive/50 text-destructive bg-destructive/10"
-                        : scan.overallGrade === "Grade A"
-                        ? "border-green-500/50 text-green-400 bg-green-500/10"
-                        : "border-yellow-500/50 text-yellow-400 bg-yellow-500/10"
-                    }`}>
-                      {scan.overallGrade}
-                    </span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-mono text-sm font-bold text-foreground">{scan.batchId}</p>
+                      <span className={`text-[9px] uppercase tracking-widest font-bold px-1.5 py-0.5 border ${
+                        scan.overallGrade === "Reject"
+                          ? "border-destructive/50 text-destructive bg-destructive/10"
+                          : scan.overallGrade === "Grade A"
+                          ? "border-green-500/50 text-green-400 bg-green-500/10"
+                          : "border-yellow-500/50 text-yellow-400 bg-yellow-500/10"
+                      }`}>
+                        {scan.overallGrade}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {scan.farmerName} · {new Date(scan.createdAt).toLocaleDateString()}
+                      {scan.weightKg != null && ` · ${scan.weightKg}kg`}
+                      {scan.gasPpm != null && ` · ${scan.gasPpm}ppm`}
+                    </p>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {scan.farmerName} · {new Date(scan.createdAt).toLocaleDateString()}
-                    {scan.weightKg != null && ` · ${scan.weightKg}kg`}
-                    {scan.gasPpm != null && ` · ${scan.gasPpm}ppm`}
-                  </p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Pending</span>
+                    <button
+                      onClick={() => handleAnchor(scan)}
+                      disabled={!account || anchoringId === scan.id || contractNotSet || recoverId === scan.id}
+                      className="btn-rugged flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {anchoringId === scan.id ? (
+                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Anchoring…</>
+                      ) : (
+                        <><Link2 className="w-3.5 h-3.5" /> Anchor to Chain</>
+                      )}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Pending</span>
-                  <button
-                    onClick={() => handleAnchor(scan)}
-                    disabled={!account || anchoringId === scan.id || contractNotSet}
-                    className="btn-rugged flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {anchoringId === scan.id ? (
-                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Anchoring…</>
-                    ) : (
-                      <><Link2 className="w-3.5 h-3.5" /> Anchor to Chain</>
-                    )}
-                  </button>
-                </div>
+
+                {/* Inline recover panel — shown when this scan is "already anchored on-chain" */}
+                <AnimatePresence>
+                  {recoverId === scan.id && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                      className="border border-yellow-500/40 bg-yellow-500/5 p-3 space-y-2 overflow-hidden"
+                    >
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+                        <div className="text-xs space-y-1">
+                          <p className="font-bold text-yellow-300">Already anchored on-chain — tx_hash missing in database.</p>
+                          <p className="text-yellow-300/70">
+                            1. Open{" "}
+                            <a
+                              href={`https://amoy.polygonscan.com/address/${account?.address}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="underline hover:text-yellow-200"
+                            >
+                              your wallet on PolygonScan ↗
+                            </a>
+                            {" "}→ find the AgriTrust anchoring transaction → copy the TX Hash.
+                          </p>
+                          <p className="text-yellow-300/70">2. Paste it below and click <strong>Save TX</strong> to recover.</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          value={recoverTxInput}
+                          onChange={e => setRecoverTxInput(e.target.value)}
+                          placeholder="0x771bec286af27ae469e5a6a5d737a34a82da4f208..."
+                          className="flex-1 bg-background border border-yellow-500/40 px-3 py-1.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-yellow-400"
+                        />
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            onClick={() => handleRecover(scan)}
+                            disabled={isRecovering || !recoverTxInput.trim()}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-yellow-500/60 text-yellow-300 hover:bg-yellow-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {isRecovering ? <><Loader2 className="w-3 h-3 animate-spin" /> Verifying…</> : <><CheckCircle2 className="w-3 h-3" /> Save TX</>}
+                          </button>
+                          <button
+                            onClick={() => { setRecoverId(null); setRecoverTxInput(""); }}
+                            className="px-3 py-1.5 text-xs border border-border text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             ))}
           </div>
