@@ -321,6 +321,21 @@ export default function ConsumerVerification() {
               <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Sumber: Panel Harga Bapanas & PIHPS Nasional</span>
             </div>
           </div>
+          <div className="p-3 border-b border-border bg-background">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+              Suggested Price for this batch ({data.overallGrade}):
+            </p>
+            <p className={`font-mono text-lg font-bold ${
+              data.overallGrade === "Reject" ? "text-red-400" :
+              data.overallGrade === "Grade A" ? "text-green-400" :
+              data.overallGrade === "Grade B" ? "text-yellow-400" : "text-orange-400"
+            }`}>
+              {data.overallGrade === "Grade A" ? "Rp 20.000 - 35.000 / kg" :
+               data.overallGrade === "Grade B" ? "Rp 12.000 - 20.000 / kg" :
+               data.overallGrade === "Grade C" ? "Rp 5.000 - 12.000 / kg" :
+               "Tidak Layak / Jangan dibeli"}
+            </p>
+          </div>
           <div className="grid grid-cols-2 divide-x divide-y divide-border">
             <div className="p-3 bg-green-500/5">
               <p className="text-[9px] uppercase tracking-widest font-bold text-green-400 mb-1">Grade A (Premium)</p>

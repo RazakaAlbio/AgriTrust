@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, ShieldCheck, ShieldX, Copy, ExternalLink, AlertTriangle, Scale, Wind, Microscope, User, Calendar, MapPin, QrCode, X, CheckCircle2 } from "lucide-react";
+import { Search, ShieldCheck, ShieldX, Copy, ExternalLink, AlertTriangle, Scale, Wind, Microscope, User, Calendar, MapPin, QrCode, X, CheckCircle2, FileDown, Tag, TrendingUp } from "lucide-react";
 import { type AIClass, type Grade, getGradeInfo, buildTxUrl } from "@/lib/grading";
+import { generateCertificatePDF } from "@/lib/generateCertificate";
 import { supabase } from "@/lib/supabase";
 
 interface Detection { aiClass: AIClass; confidence: number; count: number; }
@@ -107,6 +108,23 @@ export default function VerifyTab() {
   const copyHash = () => {
     navigator.clipboard.writeText(result?.txHash ?? result?.batchId ?? "");
     setCopied(true); setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownloadPDF = () => {
+    if (!result) return;
+    generateCertificatePDF({
+      batchId:  result.batchId,
+      result:   result.overallGrade,
+      quality:  Math.round((result.detections[0]?.confidence || 0) * 100),
+      farmer:   result.farmer,
+      date:     result.harvestDate,
+      location: result.location,
+      txHash:   result.txHash ?? "",
+      sensors:  {
+        weight:  result.sensors.weight.value,
+        gas_ppm: result.sensors.gas_ppm.value,
+      },
+    });
   };
 
   // Simulate scanning a QR code successfully after 3 seconds
@@ -318,6 +336,33 @@ export default function VerifyTab() {
                   ))}
                 </div>
 
+                {/* Tomato Market Price Reference */}
+                <div className="p-4 bg-secondary/5 border-b border-border">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Tag className="w-4 h-4 text-primary" />
+                    <p className="data-label !mb-0">Suggested Market Price</p>
+                  </div>
+                  <div className="border border-border bg-background p-3 rounded">
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+                      Based on {result.overallGrade}
+                    </p>
+                    <p className={`font-mono text-lg font-bold ${
+                      result.overallGrade === "Reject" ? "text-red-400" :
+                      result.overallGrade === "Grade A" ? "text-green-400" :
+                      result.overallGrade === "Grade B" ? "text-yellow-400" : "text-orange-400"
+                    }`}>
+                      {result.overallGrade === "Grade A" ? "Rp 20.000 - 35.000 / kg" :
+                       result.overallGrade === "Grade B" ? "Rp 12.000 - 20.000 / kg" :
+                       result.overallGrade === "Grade C" ? "Rp 5.000 - 12.000 / kg" :
+                       "Tidak Layak / Jangan dibeli"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <TrendingUp className="w-3 h-3 text-muted-foreground" />
+                    <p className="text-[9px] text-muted-foreground">Panel Harga Bapanas & PIHPS (2024-2025)</p>
+                  </div>
+                </div>
+
                 {/* Blockchain */}
                 <div className="p-4 bg-secondary/10">
                   <p className="data-label mb-3">Blockchain Integrity</p>
@@ -344,6 +389,13 @@ export default function VerifyTab() {
                         <span>Not yet anchored on-chain</span>
                       </div>
                     )}
+                    <button
+                      onClick={handleDownloadPDF}
+                      className="btn-rugged w-full flex items-center justify-center gap-2 min-h-[44px] text-sm bg-secondary/50 hover:bg-secondary border-border mt-3"
+                    >
+                      <FileDown className="w-4 h-4 text-muted-foreground" />
+                      Download PDF Certificate
+                    </button>
                   </div>
                 </div>
               </div>
