@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Activity, ShieldCheck, TrendingDown, Clock, AlertTriangle, Info, CheckCircle2, Server, Globe, Database, Network } from "lucide-react";
+import { Activity, ShieldCheck, TrendingDown, Clock, AlertTriangle, Info, CheckCircle2, Server, Globe, Database, Network, Tag, TrendingUp } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Legend, AreaChart, Area } from "recharts";
 import { supabase } from "@/lib/supabase";
 
@@ -115,6 +115,91 @@ export default function OverviewTab() {
               <CheckCircle2 className="w-4 h-4 text-primary" /> Blockchain Integrity
             </div>
           </div>
+        </div>
+      </motion.div>
+
+      {/* ── Tomato Market Price Reference (Indonesia) ── */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="border border-border bg-secondary/10">
+        <div className="border-b border-border p-3 flex items-center justify-between bg-secondary/30">
+          <div className="flex items-center gap-2">
+            <Tag className="w-4 h-4 text-primary" />
+            <p className="data-label !mb-0">Referensi Harga Tomat · Indonesia</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-primary rounded-full" />
+            <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Sumber: Panel Harga Bapanas & PIHPS Nasional · 2024–2025</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0 divide-border">
+          {/* Grade A */}
+          <div className="p-4 bg-green-500/5 hover:bg-green-500/10 transition-colors">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-[10px] uppercase tracking-widest font-bold text-green-400">Grade A — Premium</span>
+            </div>
+            <p className="font-mono text-xl font-bold text-green-400">Rp 20.000</p>
+            <p className="font-mono text-sm text-green-400/70">– Rp 35.000 / kg</p>
+            <div className="mt-2 pt-2 border-t border-green-500/20 space-y-0.5">
+              <p className="text-[10px] text-muted-foreground">✅ Buah matang sempurna</p>
+              <p className="text-[10px] text-muted-foreground">✅ Ukuran seragam, kulit mulus</p>
+              <p className="text-[10px] text-muted-foreground">✅ Tanpa cacat visual</p>
+              <p className="text-[10px] text-green-400/80 mt-1 font-medium">→ Ritel modern / ekspor</p>
+            </div>
+          </div>
+
+          {/* Grade B */}
+          <div className="p-4 bg-yellow-500/5 hover:bg-yellow-500/10 transition-colors">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="w-2 h-2 rounded-full bg-yellow-500" />
+              <span className="text-[10px] uppercase tracking-widest font-bold text-yellow-400">Grade B — Standar</span>
+            </div>
+            <p className="font-mono text-xl font-bold text-yellow-400">Rp 12.000</p>
+            <p className="font-mono text-sm text-yellow-400/70">– Rp 20.000 / kg</p>
+            <div className="mt-2 pt-2 border-t border-yellow-500/20 space-y-0.5">
+              <p className="text-[10px] text-muted-foreground">🟡 Setengah matang / hampir matang</p>
+              <p className="text-[10px] text-muted-foreground">🟡 Sedikit ketidakseragaman ukuran</p>
+              <p className="text-[10px] text-muted-foreground">🟡 Cacat ringan diterima</p>
+              <p className="text-[10px] text-yellow-400/80 mt-1 font-medium">→ Pasar tradisional / horeka</p>
+            </div>
+          </div>
+
+          {/* Grade C */}
+          <div className="p-4 bg-orange-500/5 hover:bg-orange-500/10 transition-colors">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="w-2 h-2 rounded-full bg-orange-500" />
+              <span className="text-[10px] uppercase tracking-widest font-bold text-orange-400">Grade C — Lokal</span>
+            </div>
+            <p className="font-mono text-xl font-bold text-orange-400">Rp 5.000</p>
+            <p className="font-mono text-sm text-orange-400/70">– Rp 12.000 / kg</p>
+            <div className="mt-2 pt-2 border-t border-orange-500/20 space-y-0.5">
+              <p className="text-[10px] text-muted-foreground">🟠 Belum matang (unripe)</p>
+              <p className="text-[10px] text-muted-foreground">🟠 Ukuran kecil / tidak seragam</p>
+              <p className="text-[10px] text-muted-foreground">🟠 Cacat ringan–sedang</p>
+              <p className="text-[10px] text-orange-400/80 mt-1 font-medium">→ Industri pengolahan / saus</p>
+            </div>
+          </div>
+
+          {/* Reject */}
+          <div className="p-4 bg-destructive/5 hover:bg-destructive/10 transition-colors">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-[10px] uppercase tracking-widest font-bold text-red-400">Reject — Tidak Layak</span>
+            </div>
+            <p className="font-mono text-xl font-bold text-red-400">—</p>
+            <p className="font-mono text-sm text-red-400/70">Jangan dibeli</p>
+            <div className="mt-2 pt-2 border-t border-red-500/20 space-y-0.5">
+              <p className="text-[10px] text-muted-foreground">⚠️ Jamur / busuk (mold / rotten)</p>
+              <p className="text-[10px] text-muted-foreground">⚠️ Retak parah / ujung busuk</p>
+              <p className="text-[10px] text-muted-foreground">⚠️ Tidak aman dikonsumsi</p>
+              <p className="text-[10px] text-red-400/80 mt-1 font-medium">→ Kembalikan ke petani / musnahkan</p>
+            </div>
+          </div>
+        </div>
+        <div className="border-t border-border px-4 py-2 flex items-center gap-2 bg-secondary/20">
+          <TrendingUp className="w-3 h-3 text-muted-foreground shrink-0" />
+          <p className="text-[9px] text-muted-foreground">
+            Harga bersifat indikatif berdasarkan data Panel Harga Pangan Bapanas & PIHPS Nasional (2024–2025). Harga riil dapat berfluktuasi ±30% tergantung musim, cuaca, dan kondisi pasokan.
+          </p>
         </div>
       </motion.div>
 

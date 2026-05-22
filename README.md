@@ -14,9 +14,10 @@
 4. [AI / Machine Learning Pipeline](#4-ai--machine-learning-pipeline)
 5. [Blockchain Layer](#5-blockchain-layer)
 6. [IoT Hardware & Firmware](#6-iot-hardware--firmware)
-7. [Getting Started](#7-getting-started)
-8. [Project Structure](#8-project-structure)
-9. [⚠️ Known Issues & TODO](#9-️-known-issues--todo)
+7. [Indonesian Tomato Price Reference](#7-indonesian-tomato-price-reference)
+8. [Getting Started](#8-getting-started)
+9. [Project Structure](#9-project-structure)
+10. [⚠️ Known Issues & TODO](#10-️-known-issues--todo)
 
 ---
 
@@ -32,14 +33,14 @@ edge-computing architecture. The pipeline is:
   • Load Cell (HX711)                    │  ← Sensor fusion
   • MQ-135 Gas Sensor                    │  ← RFID authentication
                                          │
-                              [Azure Backend API]
+                              [Supabase Backend]
                                          │
                           ┌──────────────┴──────────────┐
                    [Polygon Amoy Blockchain]    [React Web Dashboard]
-                   (via Thirdweb / Tatum API)   (Consumer / Farmer / Admin)
+                   (Thirdweb v5 SDK)            (Consumer / Farmer / Admin)
 ```
 
-**Grading scheme (7 classes, post v2 model):**
+**Grading scheme (7 classes, v3 model):**
 
 | Class | Grade | Safety Level |
 |---|---|---|
@@ -75,12 +76,19 @@ edge-computing architecture. The pipeline is:
 │                                                                   │
 └────────────────────────── CLOUD / WEB ───────────────────────────┘
          │
-         ▼ HTTPS POST (Azure Backend)
+         ▼ HTTPS POST → Supabase REST API
+┌─────────────────────────────────────────────────────────┐
+│  Supabase (PostgreSQL + Auth + Row Level Security)       │
+│  Tables: farmers · scans · devices                       │
+│  Auth: JWT-based admin login via Supabase Auth           │
+└─────────────────────────────────────────────────────────┘
+         │
+         ▼
 ┌─────────────────────┐       ┌─────────────────────────┐
 │  Polygon Amoy       │       │  React Web Dashboard     │
 │  (Testnet)          │       │  (Vite + TypeScript)     │
-│  Thirdweb / Tatum   │       │  /verify  /dashboard     │
-│  Smart Contract     │       │  /admin                  │
+│  Thirdweb v5 SDK    │       │  / · /verify · /dashboard│
+│  Smart Contract     │       │  /admin (auth-gated)     │
 └─────────────────────┘       └─────────────────────────┘
 ```
 
@@ -88,32 +96,45 @@ edge-computing architecture. The pipeline is:
 
 ## 3. Web Application
 
-**Tech Stack:** React 18 · TypeScript · Vite · TailwindCSS · shadcn/ui · Framer Motion
+**Tech Stack:** React 18 · TypeScript · Vite · TailwindCSS · shadcn/ui · Framer Motion · Recharts
 
 ### Pages
 
 | Route | Page | Access | Description |
 |---|---|---|---|
-| `/` | Landing | Public | Project intro & navigation |
-| `/verify?batch={id}` | Consumer Verification | Public (mobile-first) | Scan QR → product grading result, sensor data, blockchain hash |
-| `/dashboard` | Farmer Dashboard | Private | KPI cards, 7-day grade distribution chart, recent scans table, PDF certificate export, QR generator |
-| `/admin` | Admin Panel | Protected (password gate) | Register users, RFID tag assignment, device network status |
+| `/` | Landing | Public | Project intro & navigation hub with back-button support |
+| `/verify?batch={id}` | Consumer Verification | Public (mobile-first) | Scan QR → grading result, sensor data, blockchain TX status & PolygonScan link |
+| `/dashboard` | Farmer Dashboard | Public | KPI cards, grade charts, scan history, PDF certificates, QR generator, farmer profiles |
+| `/admin` | Admin Panel | Protected (Supabase Auth) | Farmer registration, RFID management, device monitor, blockchain anchoring |
+
+### Dashboard Tabs
+
+| Tab | Description |
+|---|---|
+| **Overview** | KPI cards (farmers, scans, Grade A rate, reject rate), grade distribution bar chart, throughput area chart, system health (live devices), Indonesian tomato price reference card |
+| **Farmers** | Searchable farmer list with stats; select a farmer to see detailed profile + expandable scan log table with blockchain TX links per batch |
+| **History** | Full scan log table with grade, confidence, sync status; desktop ExternalLink + mobile "View TX" buttons (disabled for unanchored rows); PDF certificate export |
+| **Verify** | Batch ID lookup; shows AI result, sensor readings, farmer info, and blockchain integrity panel with "Verify on Polygon Explorer" (only active when tx_hash exists) |
 
 ### Key Components
 
-- **`ConsumerVerification.tsx`** — Shows grading result (PASSED/FAILED), sensor readings
-  (Weight, VOC/gas, Temperature), trust timeline, SHA-256 blockchain fingerprint,
-  and origin info (farmer, harvest date, location).
+- **`AdminLoginGate.tsx`** — Supabase Auth JWT-based login gate with back-to-home button (`←`).
 
-- **`FarmerDashboard.tsx`** — KPI summary, recharts quality trend graph, recent grading
-  sessions table with per-scan PDF certificate export (`jsPDF`), QR code generator.
+- **`AdminPanel.tsx`** — Four-tab panel:
+  1. **Register** — Farmer registration form → inserts to `farmers` table
+  2. **RFID** — Assign RFID tags to farmer records
+  3. **Devices** — Live device network status monitor
+  4. **Blockchain** — Lists unsynced scans, wallet connect (MetaMask/WalletConnect via Thirdweb), one-click "Anchor to Chain" per row; **Recover TX** inline form for batches already anchored but missing `tx_hash` in Supabase
 
-- **`AdminPanel.tsx`** — Three-tab panel: farmer registration form, RFID tag
-  management (scan + link), device network status monitor (Jetson + ESP32 nodes).
+- **`OverviewTab.tsx`** — Dashboard overview with Indonesian tomato market price reference (Grade A–C + Reject, in IDR, sourced from PIHPS Nasional 2024–2025).
 
-- **`QRGenerator.tsx`** — Generates QR codes for batch verification URLs.
+- **`HistoryTab.tsx`** — Scan history with live Supabase data; ExternalLink renders as `<a>` only when `tx_hash` is present (greyed `<span>` otherwise).
 
-- **`generateCertificate.ts`** — Generates PDF grading certificates via jsPDF.
+- **`VerifyTab.tsx`** — Batch lookup with blockchain integrity panel; "Verify on Polygon Explorer" button is disabled when `tx_hash` is null.
+
+- **`FarmersTab.tsx`** — Farmer profiles with expandable scan log table; "View Log" toggle shows all batches with grade, date, chain status dot, and clickable TX hash.
+
+- **`generateCertificate.ts`** — jsPDF certificate with dynamic TX hash (split across 2 lines to prevent overflow), PolygonScan verify URL, and sensor data.
 
 ### Running the Web App
 
@@ -122,13 +143,10 @@ edge-computing architecture. The pipeline is:
 npm install
 
 # Development server
-npm run dev          # → http://localhost:5173
+npm run dev          # → http://localhost:8080
 
 # Production build
 npm run build
-
-# Run tests
-npm test
 ```
 
 ---
@@ -167,7 +185,7 @@ python python/train.py
 | `copy_paste` | 0.10 | 0.30 |
 | `patience` | 40 | 50 |
 
-**v3 validated per-class mAP@50 (real, from `model.val()`):**
+**v3 validated per-class mAP@50:**
 
 | Class | Grade | mAP@50 |
 |---|---|---|
@@ -182,7 +200,6 @@ python python/train.py
 ### Generate Training Report (PDF)
 
 ```bash
-# After training completes, update generate_report.py with actual metrics, then:
 python python/generate_report.py
 # → python/outputs/agritrust_v3_report.pdf
 ```
@@ -217,13 +234,6 @@ python python/export_tensorrt.py
 python python/validate_tta.py
 ```
 
-### Python Dependencies
-
-```bash
-conda activate agritrust
-pip install -r python/requirements.txt
-```
-
 ### Dataset Structure
 
 ```
@@ -239,7 +249,8 @@ python/dataset/
 ## 5. Blockchain Layer
 
 **Network:** Polygon Amoy Testnet  
-**Integration:** Thirdweb SDK / Tatum API  
+**SDK:** Thirdweb v5  
+**Contract:** `AgriTrustGrading.sol` — deployed at `0x12b24ac3547a901c7e8d7eef423c4c3ec4f319dd`  
 **Purpose:** Immutable audit trail — each grading event is anchored on-chain with a
 SHA-256 hash of `{batchId + sensorData + AIResult + timestamp}`.
 
@@ -248,22 +259,55 @@ SHA-256 hash of `{batchId + sensorData + AIResult + timestamp}`.
 ```
 Jetson Nano grades batch
        ↓
-SHA-256 hash generated locally
+SHA-256 hash generated (Web Crypto API in browser, or on-device)
        ↓
-POST to Azure Backend
+Admin clicks "Anchor to Chain" in Admin Panel → Blockchain tab
        ↓
-Azure calls Thirdweb / Tatum API
+Thirdweb v5 sendAndConfirmTransaction → Polygon Amoy
        ↓
-Transaction written to Polygon Amoy smart contract
+TX hash written back to Supabase scans.tx_hash
        ↓
-TX hash stored in database alongside batch record
-       ↓
-Consumer scans QR → /verify → sees hash → clicks "Verify on Blockchain"
-       ↓
-Links to Amoy PolygonScan explorer for the transaction
+Consumer scans QR → /verify → sees hash → "Verify on PolygonScan" ↗
 ```
 
-### Explorer
+### Smart Contract
+
+```solidity
+// AgriTrustGrading.sol
+// Function: anchorRecord(batchId, sha256Hash, overallGrade)
+// Function: verifyRecord(batchId) → (sha256Hash, grade, timestamp, anchoredBy, exists)
+// Access control: onlyOwnerOrDevice modifier
+```
+
+- Contract source: `contracts/AgriTrustGrading.sol`
+- Deployed: `https://amoy.polygonscan.com/address/0x12b24ac3547a901c7e8d7eef423c4c3ec4f319dd`
+
+### Supabase RLS — Critical Patch
+
+The `scans` table requires an **UPDATE policy** for `tx_hash` writes to persist. Without it, Supabase silently rejects the write and the scan reappears as "Pending" after refresh.
+
+Run this once in **Supabase Dashboard → SQL Editor**:
+
+```sql
+CREATE POLICY "Enable update for authenticated users"
+  ON public.scans
+  FOR UPDATE
+  USING (auth.role() = 'authenticated');
+```
+
+Full patch file: [`supabase_rls_patch.sql`](./supabase_rls_patch.sql)
+
+### Recover TX (Already Anchored Batches)
+
+If a scan was anchored on-chain but `tx_hash` is missing in Supabase (e.g., before the RLS patch was applied):
+
+1. Go to **Admin Panel → Blockchain tab**
+2. Click **"Anchor to Chain"** on the pending scan → the UI detects "already anchored on-chain"
+3. A yellow **Recover TX** panel appears
+4. Click the PolygonScan link to find the original TX hash from your wallet history
+5. Paste the TX hash → click **"Save TX"** → the app verifies on-chain and saves to Supabase
+
+### Explorer & Faucet
 
 - Amoy Testnet Explorer: `https://amoy.polygonscan.com/`
 - Faucet (for test MATIC): `https://faucet.polygon.technology/`
@@ -304,7 +348,7 @@ Serial JSON message over USB:
 Jetson Nano reads from /dev/ttyUSB0 or /dev/ttyACM0
   → Fuses with camera image classification result
   → Composes final grading payload
-  → Uploads to Azure backend
+  → Uploads to Supabase REST API
 ```
 
 ### Inference Loop (Jetson Nano)
@@ -321,12 +365,53 @@ Jetson Nano reads from /dev/ttyUSB0 or /dev/ttyACM0
      if class == unripe → Grade C
 6. Display result on OLED (grade + confidence)
 7. Buzzer: 1 beep = pass, 3 beeps = reject
-8. Hash payload → POST to Azure → anchor to blockchain
+8. Hash payload → POST to Supabase → admin anchors to blockchain
 ```
 
 ---
 
-## 7. Getting Started
+## 7. Indonesian Tomato Price Reference
+
+These price ranges are displayed in the **Dashboard → Overview** tab as a real-time grade reference for farmers and buyers. Prices are sourced from the **Badan Pangan Nasional (Bapanas)** and **PIHPS Nasional** for 2024–2025.
+
+> 📊 **Live data sources:** 
+> - Panel Harga Bapanas: [panelharga.badanpangan.go.id](https://panelharga.badanpangan.go.id)
+> - PIHPS Nasional (Bank Indonesia): [hargapangan.id](https://hargapangan.id)
+
+> 📌 **Note:** The Indonesian Ministry of Agriculture (*Kementerian Pertanian*) does **not** set an official *Harga Eceran Tertinggi* (HET / price ceiling) for tomatoes, as it is not classified as a basic strategic food commodity. The ranges below reflect actual observed market prices at the farm-gate and wholesale (pasar induk) level.
+
+| Grade | AI Classes | Price Range (IDR/kg) | Market Channel |
+|---|---|---|---|
+| **Grade A — Premium** | `ripe` | **Rp 20.000 – Rp 35.000** | Modern retail (supermarket), export |
+| **Grade B — Standar** | `half_ripe` | **Rp 12.000 – Rp 20.000** | Traditional market, HOREKA |
+| **Grade C — Lokal** | `unripe` | **Rp 5.000 – Rp 12.000** | Processing industry (sauces, canning) |
+| **Reject — Tidak Layak** | `mold`, `rotten`, `blossom_end_rot`, `fruit_cracking` | **— / Jangan dibeli** | Return to farmer / dispose |
+
+### Grade Criteria (Visual + AI)
+
+| Grade | Kematangan | Ukuran | Kondisi Fisik |
+|---|---|---|---|
+| A | Matang sempurna (merah merata) | Seragam, besar | Kulit mulus, bebas bercak |
+| B | Setengah matang / hampir matang | Sedikit tidak seragam | Cacat ringan diterima |
+| C | Belum matang (hijau–oranye) | Kecil / tidak seragam | Cacat ringan–sedang |
+| Reject | — | — | Jamur, busuk, retak parah, blossom-end rot |
+
+### Price Volatility
+
+Tomato prices in Indonesia are highly volatile (±30% swing) due to:
+- **Weather / rainfall** — heavy rain causes field rot, reducing supply sharply
+- **Harvest cycles** — prices collapse during peak harvest (panen raya) at major production centers (Malang, Lembang, Batu, Berastagi)
+- **Demand spikes** — prices rise during major religious holidays (Eid, Christmas)
+
+**References:**
+- PIHPS Nasional (Bank Indonesia): [https://hargapangan.id](https://hargapangan.id)
+- Badan Pangan Nasional (NFA): [https://badanpangan.go.id](https://badanpangan.go.id)
+- Kementerian Pertanian RI: [https://pertanian.go.id](https://pertanian.go.id)
+- Pasar Induk regional data via Dinas Perdagangan setempat
+
+---
+
+## 8. Getting Started
 
 ### Prerequisites
 
@@ -335,12 +420,29 @@ Jetson Nano reads from /dev/ttyUSB0 or /dev/ttyACM0
 - CUDA-compatible GPU for training (RTX 2050 4GB tested)
 - Jetson Nano 4GB (for deployment)
 
+### Environment Variables (`.env.local`)
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_THIRDWEB_CLIENT_ID=your-thirdweb-client-id
+VITE_AGRITRUST_CONTRACT_ADDRESS=0x12b24ac3547a901c7e8d7eef423c4c3ec4f319dd
+```
+
 ### Web App
 
 ```bash
 npm install
-npm run dev
+npm run dev          # http://localhost:8080
+npm run build        # production build → dist/
 ```
+
+### Supabase Setup
+
+1. Run `supabase_setup.sql` in **Supabase Dashboard → SQL Editor**
+2. Run `supabase_rls_patch.sql` to add the missing UPDATE policy on `scans`
+3. Create a storage bucket named `scan-images` (public)
+4. Create an admin user in **Supabase Dashboard → Auth → Users**
 
 ### AI Training
 
@@ -360,47 +462,56 @@ tensorboard --logdir python/runs
 
 ---
 
-## 8. Project Structure
+## 9. Project Structure
 
 ```
 agritrust-hub-main/
 │
-├── src/                          # React web application
+├── src/                                  # React web application
 │   ├── pages/
-│   │   ├── Index.tsx             # Landing page
-│   │   ├── ConsumerVerification.tsx  # Public QR scan result (/verify?batch=ID)
-│   │   ├── FarmerDashboard.tsx   # Farmer session dashboard
-│   │   └── AdminPanel.tsx        # Admin management panel
+│   │   ├── Index.tsx                     # Landing page (nav hub)
+│   │   ├── ConsumerVerification.tsx      # Public QR scan result (/verify?batch=ID)
+│   │   ├── Dashboard.tsx                 # Farmer dashboard shell (tabs)
+│   │   ├── AdminPanel.tsx                # Admin management panel (4 tabs)
+│   │   └── NotFound.tsx
 │   ├── components/
-│   │   ├── AdminLoginGate.tsx    # Password protection wrapper
-│   │   ├── QRGenerator.tsx       # QR code generator (encodes /verify?batch=ID)
-│   │   └── ui/                   # shadcn/ui components
+│   │   ├── AdminLoginGate.tsx            # Supabase Auth JWT login gate (+ back button)
+│   │   ├── QRGenerator.tsx               # QR code generator (encodes /verify?batch=ID)
+│   │   ├── dashboard/
+│   │   │   ├── OverviewTab.tsx           # KPIs, charts, tomato price reference card
+│   │   │   ├── FarmersTab.tsx            # Farmer profiles + expandable scan log
+│   │   │   ├── HistoryTab.tsx            # Full scan history + PDF export
+│   │   │   └── VerifyTab.tsx             # Batch verification + blockchain proof
+│   │   └── ui/                           # shadcn/ui components
 │   └── lib/
-│       ├── grading.ts            # AI class → grade mapping (source of truth)
-│       └── generateCertificate.ts # jsPDF certificate export
+│       ├── grading.ts                    # AI class → grade mapping (source of truth)
+│       ├── blockchain.ts                 # Thirdweb v5 anchoring + verifyBatchOnChain
+│       ├── supabase.ts                   # Supabase client
+│       ├── thirdweb.ts                   # Thirdweb client config
+│       └── generateCertificate.ts        # jsPDF certificate (TX hash + PolygonScan URL)
 │
-├── python/                       # AI/ML pipeline
-│   ├── train.py                  # YOLOv8 training script
-│   ├── generate_report.py        # PDF training report generator
-│   ├── export_tensorrt.py        # ONNX + TensorRT FP16 export
-│   ├── inference_test.py         # Inference validation + PT vs ONNX compare
-│   ├── validate_tta.py           # TTA validation script
-│   ├── rpcam_augmentation.py     # RP Cam OV5647 augmentation simulation
-│   ├── class_analysis.py         # Class distribution analysis
-│   ├── remap_labels.py           # Label re-indexing utility
-│   ├── requirements.txt          # Python dependencies
-│   ├── config/
-│   │   └── agritrust_train.yaml  # Hyperparameter config (reference only)
-│   ├── exports/
-│   │   └── best.onnx             # v3 ONNX export (12.3 MB)
-│   ├── runs/
-│   │   ├── agritrust_v2/         # v2 model artifacts (best.pt @ ep139)
-│   │   └── agritrust_v3/         # v3 model artifacts (best.pt @ ep19, 78.0% mAP)
-│   └── outputs/
-│       ├── agritrust_v2_report.pdf
-│       └── agritrust_v3_report.pdf
+├── contracts/
+│   └── AgriTrustGrading.sol              # Deployed smart contract (Polygon Amoy)
 │
-├── public/                       # Static assets
+├── supabase_setup.sql                    # Full DB schema + RLS policies
+├── supabase_rls_patch.sql                # ⚠️ Critical: adds UPDATE policy for scans
+│
+├── python/                               # AI/ML pipeline
+│   ├── train.py
+│   ├── generate_report.py
+│   ├── export_tensorrt.py
+│   ├── inference_test.py
+│   ├── validate_tta.py
+│   ├── rpcam_augmentation.py
+│   ├── class_analysis.py
+│   ├── remap_labels.py
+│   ├── requirements.txt
+│   ├── config/agritrust_train.yaml
+│   ├── exports/best.onnx                 # v3 ONNX export (12.3 MB)
+│   ├── runs/agritrust_v3/                # v3 artifacts (best.pt @ ep19, 78.0% mAP)
+│   └── outputs/agritrust_v3_report.pdf
+│
+├── public/
 ├── package.json
 ├── vite.config.ts
 └── tailwind.config.ts
@@ -408,73 +519,76 @@ agritrust-hub-main/
 
 ---
 
-## 9. ⚠️ Known Issues & TODO
+## 10. ⚠️ Known Issues & TODO
 
 ### 🔴 Critical — Must Fix Before Deployment
 
 - **[ ] Hardware POST Pipeline to Supabase not set up**
-  The edge devices (Jetson Nano) need their inference script configured to execute `POST` requests via the Supabase REST API to the `scans` table.
+  The edge devices (Jetson Nano) need their inference script configured to POST to the Supabase REST API `scans` table.
 
 - **[ ] TensorRT export not run on Jetson Nano**
   `export_tensorrt.py` must be run **on the Jetson Nano** (not Windows) to produce
   the `.engine` file. Transfer `best.pt` to Jetson and run there.
 
+- **[ ] Supabase RLS UPDATE patch must be applied**
+  Without `supabase_rls_patch.sql`, `tx_hash` writes silently fail — scans revert to "Pending" after page refresh. See [§5 Blockchain Layer](#supabase-rls--critical-patch).
+
 ### 🟡 Important — Before Production
 
-- **[ ] Blockchain "Verify on Blockchain" button is non-functional**
-  Needs real Polygon Amoy TX hash. Placeholder: links to `https://amoy.polygonscan.com/`.
-  Requires: Polygon Amoy wallet setup + Thirdweb/Tatum contract deployment.
-
 - **[ ] Jetson Nano inference script not yet written**
-  The full edge inference loop (camera → YOLOv8 → RFID → OLED → buzzer → POST)
-  is planned but not yet implemented.
+  Full edge inference loop (camera → YOLOv8 → RFID → OLED → buzzer → POST) is planned but not yet implemented.
 
 - **[ ] ESP32 firmware not yet written**
   HX711 weight + MQ-135 gas sensor firmware for ESP32 not yet implemented.
 
 ### 🟢 Completed
 
-- **[✅] Full Supabase Backend Migration** — Replaced mock data across all dashboard tabs (Overview, Farmers, History) with real-time Supabase SQL queries and integrated RLS security.
-- **[✅] Admin Panel Authentication** — Secured the admin dashboard with Supabase Auth (JWT) instead of hardcoded client-side passwords.
-- **[✅] RFID Management** — Admin panel now has real `INSERT`, `DELETE`, and `UPDATE` capabilities for linking RFID tags to farmers via Supabase.
-- **[✅] Dynamic Web Grading Labels** — Dashboard charts and verification pages now map perfectly to the AI output (Grade A, Grade B, Grade C, Reject).
-- **[✅] Fixed Sensor Field Mismatches** — Removed fake `rgb` and `temperature` fields; `ConsumerVerification` now queries real `weight_kg` and `gas_ppm` from Supabase.
-- **[✅] v3 model training** — 78.0% mAP@50 validated (ep19/93, YOLOv8n)
-- **[✅] ONNX export** — `python/exports/best.onnx` (12.3 MB, 1.84× faster than PT)
-- **[✅] PT vs ONNX comparison** — functionally equivalent at conf ≥ 0.25
-- **[✅] TTA validation** — tested, TTA gave -0.75% (not used in deployment)
-- **[✅] Training report** — `python/outputs/agritrust_v3_report.pdf` with real validated numbers
-- **[✅] `generate_report.py` per-class metrics** — updated to real validated values
+- **[✅] Full Supabase Backend Migration** — All dashboard tabs (Overview, Farmers, History, Verify) replaced mock data with live Supabase SQL queries.
+- **[✅] Admin Panel Authentication** — Secured with Supabase Auth (JWT). `AdminLoginGate` wraps `/admin` route.
+- **[✅] Admin Login Back Button** — `← ArrowLeft` link in the login gate header navigates back to `/`.
+- **[✅] RFID Management** — Admin panel has real `INSERT`, `DELETE`, `UPDATE` for RFID–farmer linking.
+- **[✅] Dynamic Web Grading Labels** — Charts and verification pages map AI output classes to Grade A/B/C/Reject correctly.
+- **[✅] Fixed Sensor Field Mismatches** — ConsumerVerification queries real `weight_kg` and `gas_ppm` from Supabase.
+- **[✅] v3 model training** — 78.0% mAP@50 validated (ep19/93, YOLOv8n).
+- **[✅] ONNX export** — `python/exports/best.onnx` (12.3 MB, 1.84× faster than PT).
+- **[✅] PT vs ONNX comparison** — functionally equivalent at conf ≥ 0.25.
+- **[✅] TTA validation** — TTA gave -0.75% (not used in deployment).
+- **[✅] Training report** — `python/outputs/agritrust_v3_report.pdf` with real validated numbers.
 - **[✅] AgriTrustGrading.sol deployed** — Custom Solidity contract on Polygon Amoy (`0x12b24ac3547a901c7e8d7eef423c4c3ec4f319dd`). Stores SHA-256 grading hashes with owner + device access control.
-- **[✅] Thirdweb v5 SDK integrated** — `anchorGradingRecord()` in `blockchain.ts` hashes payload via Web Crypto API and sends tx via `sendAndConfirmTransaction`. TX hash written back to Supabase `scans.tx_hash`.
-- **[✅] Admin Blockchain Tab** — Fourth tab in AdminPanel: wallet connect (MetaMask/WalletConnect), lists unsynced scans, one-click "Anchor to Chain" per row, shows result with PolygonScan link.
-- **[✅] Consumer verification updated** — Real `tx_hash` shown with Anchored/Pending status badge, button label changes to "Verify on PolygonScan" when anchored.
-- **[✅] PDF Certificate updated** — Real TX hash + `amoy.polygonscan.com/tx/...` URL printed in certificate.
-- **[✅] `.gitignore`** — large artifacts excluded (datasets, runs, exports, outputs)
+- **[✅] Thirdweb v5 SDK integrated** — `anchorGradingRecord()` in `blockchain.ts` hashes payload via Web Crypto API and sends tx via `sendAndConfirmTransaction`. TX hash written back to Supabase.
+- **[✅] Admin Blockchain Tab** — 4th tab in AdminPanel: wallet connect (MetaMask/WalletConnect), unsynced scan list, one-click "Anchor to Chain", PolygonScan link.
+- **[✅] Supabase RLS Diagnosed & Fixed** — Root cause of tx_hash not persisting identified: missing `UPDATE` policy on `scans` table. `supabase_rls_patch.sql` created.
+- **[✅] Recover TX Flow** — When a scan is "already anchored on-chain" (contract rejects duplicate), Admin Panel shows inline yellow recovery panel to paste the TX hash and save it to Supabase. Verifies on-chain via `verifyBatchOnChain()` before writing.
+- **[✅] HistoryTab ExternalLink guarded** — `<a>` only renders when `tx_hash` is non-null; unanchored rows show a greyed `<span>` (non-clickable).
+- **[✅] VerifyTab "Verify on Polygon Explorer"** — Button disabled/greyed when batch not yet anchored, active link when `tx_hash` exists.
+- **[✅] FarmersTab "View Log"** — Expandable scan log table per farmer: Batch ID, Date, Grade, chain status dot, PolygonScan TX link.
+- **[✅] PDF Certificate TX Hash** — Hash split across 2 lines to prevent overflow; box height dynamically sized; PolygonScan URL rendered with `maxWidth` word-wrap.
+- **[✅] Indonesian Tomato Price Reference** — Dashboard Overview shows grade-based price ranges (IDR) sourced from PIHPS Nasional / hargapangan.id (2024–2025). Reject grade explicitly marked "Jangan dibeli / kembalikan".
+- **[✅] `.gitignore`** — Large artifacts excluded (datasets, runs, exports, outputs).
 
 ### 🟢 Nice to Have
 
-- **[ ] Offline-first PWA** — cache grading results in IndexedDB, sync when online
-- **[ ] `agritrust_train.yaml` wired into `train.py`** — currently defined inline
+- **[ ] Offline-first PWA** — Cache grading results in IndexedDB, sync when online.
+- **[ ] `agritrust_train.yaml` wired into `train.py`** — currently defined inline.
+- **[ ] Real-time price sync** — Fetch live tomato prices from `hargapangan.id` API instead of static card.
 
 ---
 
 ## Setup Checklist (Full System)
 
-When the full system is ready for deployment, complete these steps in order:
-
 ```
-[x] 1. Set up Database schema and Supabase Auth
-[x] 2. Integrate Web Dashboard with Supabase via @supabase/supabase-js
-[x] 3. Register Polygon Amoy wallet, deploy grading smart contract
-[x] 4. Wire Thirdweb/Tatum API to anchor hashes on-chain
-[ ] 5. Transfer best.pt to Jetson Nano
-[ ] 6. Run export_tensorrt.py on Jetson Nano → get best.engine
-[ ] 7. Flash ESP32 firmware (HX711 + MQ-135)
-[ ] 8. Wire all IoT components (RFID, OLED, Buzzer, CSI camera)
-[ ] 9. Write and test Jetson Nano inference loop script (posting to Supabase REST API)
-[ ] 10. Test full end-to-end: scan → grade → POST → blockchain → QR → web
-[ ] 11. Build web app: npm run build → deploy to hosting (Vercel/Netlify)
+[x] 1.  Set up Supabase schema (supabase_setup.sql)
+[x] 2.  Apply RLS UPDATE patch for scans (supabase_rls_patch.sql)  ← CRITICAL
+[x] 3.  Integrate Web Dashboard with Supabase via @supabase/supabase-js
+[x] 4.  Register Polygon Amoy wallet, deploy AgriTrustGrading.sol
+[x] 5.  Wire Thirdweb v5 SDK → anchor hashes on-chain from Admin Panel
+[ ] 6.  Transfer best.pt to Jetson Nano
+[ ] 7.  Run export_tensorrt.py on Jetson Nano → best.engine
+[ ] 8.  Flash ESP32 firmware (HX711 + MQ-135)
+[ ] 9.  Wire all IoT components (RFID, OLED, Buzzer, CSI camera)
+[ ] 10. Write and test Jetson Nano inference loop (POST to Supabase REST API)
+[ ] 11. Test full end-to-end: scan → grade → POST → blockchain → QR → web verify
+[ ] 12. Build web app: npm run build → deploy to Vercel/Netlify
 ```
 
 ---
@@ -493,13 +607,17 @@ When the full system is ready for deployment, complete these steps in order:
 | Augmentation | Albumentations, RP Cam OV5647 simulation |
 | Export Target | ONNX (done) + TensorRT FP16 (Jetson, pending) |
 | Blockchain | Polygon Amoy Testnet |
-| Blockchain SDK | Thirdweb / Tatum API |
-| Cloud Backend | Azure VM (provisioned, not yet configured) |
+| Blockchain SDK | Thirdweb v5 |
+| Smart Contract | Solidity (`AgriTrustGrading.sol`) |
+| Backend / DB | Supabase (PostgreSQL + Auth + RLS + Storage) |
 | Edge Processor | NVIDIA Jetson Nano 4GB |
 | Sensor Node | ESP32 + HX711 + MQ-135 |
 | Camera | Raspberry Pi Cam v1.3 (OV5647, 5MP, CSI) |
 | Auth Hardware | RFID RC522 (SPI) |
 
+| Price Reference | Bapanas ([panelharga.badanpangan.go.id](https://panelharga.badanpangan.go.id)) / PIHPS ([hargapangan.id](https://hargapangan.id)) |
+
 ---
 
-*Agri-Trust · Thesis Research · Edge-AI Commodity Grading System*
+*Agri-Trust · Thesis Research · Edge-AI Commodity Grading System*  
+*Smart Contract: [0x12b24ac3547a901c7e8d7eef423c4c3ec4f319dd](https://amoy.polygonscan.com/address/0x12b24ac3547a901c7e8d7eef423c4c3ec4f319dd)*

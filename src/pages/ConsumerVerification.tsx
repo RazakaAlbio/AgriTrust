@@ -20,7 +20,11 @@ import {
   Scale,
   Wind,
   Microscope,
+  FileDown,
+  Tag,
+  TrendingUp,
 } from "lucide-react";
+import { generateCertificatePDF } from "@/lib/generateCertificate";
 import {
   type AIClass,
   type Grade,
@@ -114,6 +118,22 @@ export default function ConsumerVerification() {
 
   const sensorFlagged = (ok: boolean) =>
     !ok ? "border-destructive bg-destructive/10" : "";
+
+  const handleDownloadPDF = () => {
+    generateCertificatePDF({
+      batchId:  data.batchId,
+      result:   data.overallGrade,
+      quality:  Math.round((data.detections[0]?.confidence || 0) * 100),
+      farmer:   data.farmer,
+      date:     data.harvestDate,
+      location: data.location,
+      txHash:   data.txHash ?? "",
+      sensors:  {
+        weight:  data.sensors.weight.value,
+        gas_ppm: data.sensors.gas_ppm.value,
+      },
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -289,6 +309,44 @@ export default function ConsumerVerification() {
           </div>
         </motion.div>
 
+        {/* ── Tomato Market Price Reference (Indonesia) ── */}
+        <motion.div initial="hidden" animate="show" className="border border-border border-t-0 bg-secondary/10">
+          <div className="border-b border-border p-3 flex items-center justify-between bg-secondary/30">
+            <div className="flex items-center gap-2">
+              <Tag className="w-3.5 h-3.5 text-primary" />
+              <p className="data-label !mb-0">Referensi Harga Tomat · Indonesia</p>
+            </div>
+            <div className="flex items-center gap-1.5 hidden sm:flex">
+              <span className="w-1.5 h-1.5 bg-primary rounded-full" />
+              <span className="text-[9px] uppercase tracking-widest text-muted-foreground">Sumber: Panel Harga Bapanas & PIHPS Nasional</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-y divide-border">
+            <div className="p-3 bg-green-500/5">
+              <p className="text-[9px] uppercase tracking-widest font-bold text-green-400 mb-1">Grade A (Premium)</p>
+              <p className="font-mono text-sm font-bold text-green-400">Rp 20.000–35.000/kg</p>
+            </div>
+            <div className="p-3 bg-yellow-500/5">
+              <p className="text-[9px] uppercase tracking-widest font-bold text-yellow-400 mb-1">Grade B (Standar)</p>
+              <p className="font-mono text-sm font-bold text-yellow-400">Rp 12.000–20.000/kg</p>
+            </div>
+            <div className="p-3 bg-orange-500/5">
+              <p className="text-[9px] uppercase tracking-widest font-bold text-orange-400 mb-1">Grade C (Lokal)</p>
+              <p className="font-mono text-sm font-bold text-orange-400">Rp 5.000–12.000/kg</p>
+            </div>
+            <div className="p-3 bg-destructive/5">
+              <p className="text-[9px] uppercase tracking-widest font-bold text-red-400 mb-1">Reject</p>
+              <p className="font-mono text-sm font-bold text-red-400">Tidak Layak (Jangan dibeli)</p>
+            </div>
+          </div>
+          <div className="border-t border-border px-3 py-2 flex items-start sm:items-center gap-2 bg-secondary/20">
+            <TrendingUp className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5 sm:mt-0" />
+            <p className="text-[9px] text-muted-foreground">
+              Harga indikatif Panel Harga Bapanas & PIHPS (2024–2025). Harga riil dapat berfluktuasi ±30%.
+            </p>
+          </div>
+        </motion.div>
+
         {/* ── Trust Timeline ── */}
         <motion.div
           initial={{ opacity: 0, scale: 0.98 }}
@@ -381,6 +439,13 @@ export default function ConsumerVerification() {
               <ExternalLink className="w-4 h-4" />
               {data.txHash ? "Verify on PolygonScan" : "Pending Blockchain Anchor"}
             </a>
+            <button
+              onClick={handleDownloadPDF}
+              className="btn-rugged w-full flex items-center justify-center gap-2 min-h-[48px] text-sm bg-secondary/50 hover:bg-secondary border-border mt-3"
+            >
+              <FileDown className="w-4 h-4 text-muted-foreground" />
+              Download PDF Certificate
+            </button>
           </div>
         </motion.div>
 

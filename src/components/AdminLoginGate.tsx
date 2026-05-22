@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Lock, AlertTriangle, Loader2 } from "lucide-react";
+import { Lock, AlertTriangle, Loader2, ArrowLeft } from "lucide-react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 
 interface AdminLoginGateProps {
@@ -72,6 +73,9 @@ export default function AdminLoginGate({ children }: AdminLoginGateProps) {
         className="w-full max-w-sm border border-border"
       >
         <div className="border-b border-border p-6 flex items-center gap-3">
+          <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors p-1 -ml-1 mr-1" title="Back to Home">
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
           <Lock className="w-5 h-5 text-primary" />
           <div>
             <h1 className="font-mono text-lg font-bold tracking-tighter text-foreground">
