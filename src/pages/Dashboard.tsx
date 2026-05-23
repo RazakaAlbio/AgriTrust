@@ -1,15 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { BarChart3, Search, History, Users, ArrowLeft } from "lucide-react";
+import { BarChart3, Search, History, Users, ArrowLeft, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
 import OverviewTab from "@/components/dashboard/OverviewTab";
 import VerifyTab from "@/components/dashboard/VerifyTab";
 import HistoryTab from "@/components/dashboard/HistoryTab";
 import FarmersTab from "@/components/dashboard/FarmersTab";
+import DisputesTab from "@/components/dashboard/DisputesTab";
+import { supabase } from "@/lib/supabase";
 
-type Tab = "overview" | "verify" | "history" | "farmers";
+type Tab = "overview" | "verify" | "history" | "farmers" | "disputes";
 
-const TABS: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
+const BASE_TABS: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "farmers",  label: "Farmers",  icon: Users },
   { id: "verify",   label: "Verify",   icon: Search },
@@ -18,6 +20,21 @@ const TABS: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
 
 export default function Dashboard() {
   const [tab, setTab] = useState<Tab>("overview");
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAdmin(!!session);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setIsAdmin(!!session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const TABS = isAdmin
+    ? [...BASE_TABS, { id: "disputes" as Tab, label: "Disputes", icon: AlertTriangle }]
+    : BASE_TABS;
 
   return (
     <div className="min-h-screen bg-background">
@@ -72,10 +89,11 @@ export default function Dashboard() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.2, 1, 0.3, 1] }}
         >
-          {tab === "overview" && <OverviewTab />}
-          {tab === "farmers" && <FarmersTab />}
-          {tab === "verify" && <VerifyTab />}
-          {tab === "history" && <HistoryTab />}
+          {tab === "overview"  && <OverviewTab />}
+          {tab === "farmers"   && <FarmersTab />}
+          {tab === "verify"    && <VerifyTab />}
+          {tab === "history"   && <HistoryTab />}
+          {tab === "disputes"  && isAdmin && <DisputesTab />}
         </motion.div>
       </div>
     </div>

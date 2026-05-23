@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { BarChart3, Settings, ChevronRight, Cpu } from "lucide-react";
+import { BarChart3, Settings, ChevronRight, Cpu, Sprout, Search } from "lucide-react";
 
 const NAV_ITEMS = [
   {
@@ -9,6 +9,18 @@ const NAV_ITEMS = [
     icon: BarChart3,
     title: "DASHBOARD",
     desc: "Overview, verify products, scan history & farmer search",
+  },
+  {
+    to: "/farmer-disputes",
+    icon: Sprout,
+    title: "FARMER_PORTAL",
+    desc: "Lookup batches and respond to customer disputes",
+  },
+  {
+    to: "/track",
+    icon: Search,
+    title: "TRACK_DISPUTE",
+    desc: "Monitor your dispute resolution progress",
   },
   {
     to: "/admin",

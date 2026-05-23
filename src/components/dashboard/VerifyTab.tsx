@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, ShieldCheck, ShieldX, Copy, ExternalLink, AlertTriangle, Scale, Wind, Microscope, User, Calendar, MapPin, QrCode, X, CheckCircle2, FileDown, Tag, TrendingUp } from "lucide-react";
+import { Search, ShieldCheck, ShieldX, Copy, ExternalLink, AlertTriangle, Scale, Wind, Microscope, User, Calendar, MapPin, QrCode, X, CheckCircle2, FileDown, Tag, TrendingUp, Flag } from "lucide-react";
 import { type AIClass, type Grade, getGradeInfo, buildTxUrl } from "@/lib/grading";
 import { generateCertificatePDF } from "@/lib/generateCertificate";
 import { supabase } from "@/lib/supabase";
+import DisputeModal from "@/components/dashboard/DisputeModal";
 
 interface Detection { aiClass: AIClass; confidence: number; count: number; }
 interface ScanRecord {
@@ -43,6 +44,7 @@ export default function VerifyTab() {
   const [copied, setCopied] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -396,6 +398,15 @@ export default function VerifyTab() {
                       <FileDown className="w-4 h-4 text-muted-foreground" />
                       Download PDF Certificate
                     </button>
+
+                    {/* Report a Problem */}
+                    <button
+                      onClick={() => setShowDisputeModal(true)}
+                      className="w-full flex items-center justify-center gap-2 min-h-[44px] text-sm border border-orange-500/40 text-orange-400 hover:bg-orange-500/10 transition-colors mt-2"
+                    >
+                      <Flag className="w-4 h-4" />
+                      Report a Problem
+                    </button>
                   </div>
                 </div>
               </div>
@@ -409,6 +420,18 @@ export default function VerifyTab() {
           </div>
         )}
       </div>
+
+      {/* Dispute Modal */}
+      {result && (
+        <DisputeModal
+          isOpen={showDisputeModal}
+          onClose={() => setShowDisputeModal(false)}
+          batchId={result.batchId}
+          claimedGrade={result.overallGrade}
+          txHash={result.txHash}
+          farmerName={result.farmer}
+        />
+      )}
     </div>
   );
 }
