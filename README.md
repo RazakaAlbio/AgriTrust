@@ -590,6 +590,10 @@ agritrust-hub-main/
 ### 🟢 Completed
 
 - **[✅] Full Supabase Backend Migration** — All dashboard tabs (Overview, Farmers, History, Verify) replaced mock data with live Supabase SQL queries.
+- **[✅] Dispute Resolution System** — End-to-end flow allowing consumers to file a dispute (wrong quality/weight) via the Verify page.
+- **[✅] 3-Way Live Chat** — "Group Chat" dispute thread connecting Consumer, Farmer, and Admin in real-time. Added 5-second polling for live sync without page refresh.
+- **[✅] Dispute Portals** — Integrated dispute tracking directly into the **Consumer Dashboard** (CustomerTracker), **Farmer Dashboard**, and **Admin Panel** (Disputes Tab). 
+- **[✅] Email Notifications (EmailJS)** — Automated emails sent to consumers (Tracking ID receipt) and farmers (Dispute filed against them) using custom EmailJS templates.
 - **[✅] Admin Panel Authentication** — Secured with Supabase Auth (JWT). `AdminLoginGate` wraps `/admin` route.
 - **[✅] Admin Login Back Button** — `← ArrowLeft` link in the login gate header navigates back to `/`.
 - **[✅] RFID Management** — Admin panel has real `INSERT`, `DELETE`, `UPDATE` for RFID–farmer linking.
@@ -603,7 +607,7 @@ agritrust-hub-main/
 - **[✅] AgriTrustGrading.sol deployed** — Custom Solidity contract on Polygon Amoy (`0x12b24ac3547a901c7e8d7eef423c4c3ec4f319dd`). Stores SHA-256 grading hashes with owner + device access control.
 - **[✅] Thirdweb v5 SDK integrated** — `anchorGradingRecord()` in `blockchain.ts` hashes payload via Web Crypto API and sends tx via `sendAndConfirmTransaction`. TX hash written back to Supabase.
 - **[✅] Admin Blockchain Tab** — 4th tab in AdminPanel: wallet connect (MetaMask/WalletConnect), unsynced scan list, one-click "Anchor to Chain", PolygonScan link.
-- **[✅] Supabase RLS Diagnosed & Fixed** — Root cause of tx_hash not persisting identified: missing `UPDATE` policy on `scans` table. `supabase_rls_patch.sql` created.
+- **[✅] Supabase RLS & Constraints Diagnosed & Fixed** — Fixed `UPDATE` policy on `scans` table and relaxed `dispute_responses_author_type_check` to allow customers to chat.
 - **[✅] Recover TX Flow** — When a scan is "already anchored on-chain" (contract rejects duplicate), Admin Panel shows inline yellow recovery panel to paste the TX hash and save it to Supabase. Verifies on-chain via `verifyBatchOnChain()` before writing.
 - **[✅] HistoryTab ExternalLink guarded** — `<a>` only renders when `tx_hash` is non-null; unanchored rows show a greyed `<span>` (non-clickable).
 - **[✅] VerifyTab "Verify on Polygon Explorer"** — Button disabled/greyed when batch not yet anchored, active link when `tx_hash` exists.

@@ -39,13 +39,11 @@ export async function sendDisputeConfirmation(params: {
   if (!SERVICE_ID || !TEMPLATE_CUSTOMER) return;
   init();
   await emailjs.send(SERVICE_ID, TEMPLATE_CUSTOMER, {
-    to_email:     params.customer_email,
-    to_name:      params.customer_name,
-    dispute_ref:  shortId(params.dispute_id),
-    dispute_id:   params.dispute_id,
-    batch_id:     params.batch_id,
-    dispute_type: params.dispute_type,
-    tracking_url: `${window.location.origin}/track/${params.dispute_id}`
+    email: params.customer_email,
+    name:  params.customer_name,
+    code:  params.dispute_id,
+    dispute_id: params.dispute_id,
+    title: `Dispute for Batch ${params.batch_id} (${params.dispute_type}). Your Tracking Code is: ${params.dispute_id}`,
   });
 }
 
@@ -62,11 +60,10 @@ export async function sendFarmerNotification(params: {
   if (!params.farmer_email || !SERVICE_ID || !TEMPLATE_FARMER) return;
   init();
   await emailjs.send(SERVICE_ID, TEMPLATE_FARMER, {
-    to_email:     params.farmer_email,
-    to_name:      params.farmer_name,
-    dispute_ref:  shortId(params.dispute_id),
-    dispute_id:   params.dispute_id,
-    batch_id:     params.batch_id,
-    dispute_type: params.dispute_type,
+    email:   params.farmer_email,
+    name:    "AgriTrust System",
+    time:    new Date().toLocaleString(),
+    title:   `New Dispute Filed: Batch ${params.batch_id}`,
+    message: `A dispute (${params.dispute_type}) was filed against batch ${params.batch_id} by ${params.farmer_name}. Dispute ID: ${params.dispute_id}`,
   });
 }

@@ -171,16 +171,11 @@ export default function DisputeModal({
                       {submittedId}
                     </p>
                   </div>
-                  <Link 
-                    to={`/track`}
-                    onClick={handleClose}
-                    className="flex items-center justify-center gap-2 text-xs font-bold text-primary hover:text-primary/80 transition-colors pt-2"
-                  >
-                    <Link2 className="w-3.5 h-3.5" />
-                    Open Tracking Portal
-                  </Link>
                 </div>
-                <button onClick={handleClose} className="btn-rugged w-full mt-2">
+                <button
+                  onClick={handleClose}
+                  className="btn-rugged w-full py-3 text-sm mt-2"
+                >
                   Done
                 </button>
               </motion.div>
