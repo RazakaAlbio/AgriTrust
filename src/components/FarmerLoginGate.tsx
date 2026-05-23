@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Sprout, Loader2, AlertTriangle, Lock } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Sprout, Loader2, AlertTriangle, Lock, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export default function FarmerLoginGate({ onLogin }: { onLogin: (farmer: any) => void }) {
@@ -40,7 +41,13 @@ export default function FarmerLoginGate({ onLogin }: { onLogin: (farmer: any) =>
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 relative">
+      <div className="absolute top-4 left-4">
+        <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors p-2 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest">
+          <ArrowLeft className="w-4 h-4" /> Back to Home
+        </Link>
+      </div>
+
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}

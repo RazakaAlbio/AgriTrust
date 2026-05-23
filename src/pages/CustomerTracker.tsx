@@ -1,16 +1,17 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link, useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Search, AlertTriangle, CheckCircle2,
   Clock, Eye, XCircle, MessageSquare, Loader2, Link2, Info
 } from "lucide-react";
 import {
   fetchDisputeById,
+  fetchDisputeResponses,
   submitDisputeResponse,
   DISPUTE_TYPE_LABELS,
   type Dispute,
   type DisputeStatus,
+  type DisputeResponse,
 } from "@/lib/disputeService";
 import { shortId } from "@/lib/emailService";
 
@@ -26,11 +27,10 @@ const STATUS_CONFIG: Record<DisputeStatus, {
 };
 
 export default function CustomerTracker() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [query, setQuery] = useState(id || "");
+  const [query, setQuery] = useState("");
   const [dispute, setDispute] = useState<Dispute | null>(null);
-  const [isLoading, setIsLoading] = useState(!!id);
+  const [responses, setResponses] = useState<DisputeResponse[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
@@ -40,16 +40,13 @@ export default function CustomerTracker() {
     setError("");
     setIsLoading(true);
     setDispute(null);
-    
-    // Update URL if we are typing manually
-    if (searchId !== id) {
-      navigate(`/track/${searchId}`, { replace: true });
-    }
 
     try {
       const result = await fetchDisputeById(searchId.trim());
       if (result) {
         setDispute(result);
+        const resps = await fetchDisputeResponses(result.id);
+        setResponses(resps);
       } else {
         setError("Dispute not found. Please check your ID.");
       }
@@ -60,6 +57,20 @@ export default function CustomerTracker() {
       setIsLoading(false);
     }
   };
+
+  // Poll for live chat updates
+  useEffect(() => {
+    if (!dispute) return;
+    const interval = setInterval(async () => {
+      try {
+        const result = await fetchDisputeById(dispute.id);
+        if (result) setDispute(result);
+        const updatedResponses = await fetchDisputeResponses(dispute.id);
+        setResponses(updatedResponses);
+      } catch (e) {}
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [dispute]);
 
   const handleReply = async () => {
     if (!replyText.trim() || !dispute) return;
@@ -72,21 +83,14 @@ export default function CustomerTracker() {
         message:     replyText.trim(),
       });
       setReplyText("");
-      // Refresh thread
-      handleSearch(dispute.id);
+      const updated = await fetchDisputeResponses(dispute.id);
+      setResponses(updated);
     } catch (err) {
       console.error(err);
     } finally {
       setSending(false);
     }
   };
-
-  useEffect(() => {
-    if (id) {
-      setQuery(id);
-      handleSearch(id);
-    }
-  }, [id]);
 
   return (
     <div className="bg-background">
@@ -116,7 +120,7 @@ export default function CustomerTracker() {
 
         {/* Results */}
         <AnimatePresence mode="wait">
-          {!isLoading && !dispute && !error && !id && (
+          {!isLoading && !dispute && !error && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -214,11 +218,11 @@ export default function CustomerTracker() {
                   <p className="data-label !mb-0">Communication Thread</p>
                 </div>
 
-                <div className="space-y-3 mb-4">
-                  {(!dispute.responses || dispute.responses.length === 0) ? (
+                <div className="space-y-3 mb-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                  {responses.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No additional responses from admin or farmer yet.</p>
                   ) : (
-                    dispute.responses.map((r) => (
+                    responses.map((r) => (
                       <div
                         key={r.id}
                         className={`p-3 border text-sm ${

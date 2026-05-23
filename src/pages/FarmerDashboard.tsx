@@ -12,6 +12,7 @@ import { buildBlockchainTxUrl } from "@/lib/blockchain";
 import { getGradeInfo } from "@/lib/grading";
 import {
   fetchDisputesByFarmer,
+  fetchDisputeResponses,
   submitDisputeResponse,
   DISPUTE_TYPE_LABELS,
   type Dispute,
@@ -40,6 +41,18 @@ function DisputeCard({ dispute, farmerName }: { dispute: Dispute; farmerName: st
   const [sent, setSent] = useState(false);
 
   const cfg = STATUS_CONFIG[dispute.status];
+
+  // Poll for live chat updates when expanded
+  useEffect(() => {
+    if (!expanded) return;
+    const interval = setInterval(async () => {
+      try {
+        const updated = await fetchDisputeResponses(dispute.id);
+        setLocalResponses(updated);
+      } catch (e) {}
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [expanded, dispute.id]);
 
   const handleReply = async () => {
     if (!replyText.trim()) return;
@@ -126,7 +139,7 @@ function DisputeCard({ dispute, farmerName }: { dispute: Dispute; farmerName: st
                 {localResponses.length === 0 ? (
                   <p className="text-xs text-muted-foreground">No responses yet.</p>
                 ) : (
-                  <div className="space-y-2 mb-3">
+                  <div className="space-y-2 mb-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                     {localResponses.map((r) => (
                       <div key={r.id} className={`p-3 border text-xs ${r.author_type === "admin" ? "border-primary/30 bg-primary/5" : r.author_type === "customer" ? "border-border bg-secondary/10" : "border-green-500/20 bg-green-500/5 ml-4"}`}>
                         <div className="flex justify-between mb-1">

@@ -45,6 +45,15 @@ function DisputeDetail({ dispute, onUpdated }: { dispute: Dispute; onUpdated: ()
       .then(setResponses)
       .catch(console.error)
       .finally(() => setLoadingResp(false));
+
+    // Poll for live chat updates
+    const interval = setInterval(async () => {
+      try {
+        const updated = await fetchDisputeResponses(dispute.id);
+        setResponses(updated);
+      } catch (e) {}
+    }, 5000);
+    return () => clearInterval(interval);
   }, [dispute.id]);
 
   const handleStatusChange = async (status: DisputeStatus) => {
@@ -147,21 +156,23 @@ function DisputeDetail({ dispute, onUpdated }: { dispute: Dispute; onUpdated: ()
           ) : responses.length === 0 ? (
             <p className="text-xs text-muted-foreground">No responses yet.</p>
           ) : (
-            <div className="space-y-2 mb-3">
+            <div className="space-y-2 mb-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
               {responses.map((r) => (
                 <div
                   key={r.id}
                   className={`p-3 border text-xs ${
                     r.author_type === "admin"
                       ? "border-primary/30 bg-primary/5 ml-4"
-                      : "border-border bg-background"
+                      : r.author_type === "customer"
+                      ? "border-border bg-secondary/10"
+                      : "border-green-500/20 bg-green-500/5 mr-4"
                   }`}
                 >
                   <div className="flex justify-between mb-1">
                     <span className={`font-bold uppercase tracking-widest text-[10px] ${
-                      r.author_type === "admin" ? "text-primary" : "text-muted-foreground"
+                      r.author_type === "admin" ? "text-primary" : r.author_type === "customer" ? "text-foreground" : "text-green-400"
                     }`}>
-                      {r.author_type === "admin" ? "Admin" : `Farmer: ${r.author_name}`}
+                      {r.author_type === "admin" ? "Admin" : r.author_type === "customer" ? `Customer: ${r.author_name}` : `Farmer: ${r.author_name}`}
                     </span>
                     <span className="text-[10px] text-muted-foreground/60">
                       {new Date(r.created_at).toLocaleString()}

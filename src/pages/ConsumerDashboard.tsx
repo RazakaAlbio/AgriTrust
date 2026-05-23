@@ -5,14 +5,16 @@ import { Link } from "react-router-dom";
 import OverviewTab from "@/components/dashboard/OverviewTab";
 import VerifyTab from "@/components/dashboard/VerifyTab";
 import HistoryTab from "@/components/dashboard/HistoryTab";
+import FarmersTab from "@/components/dashboard/FarmersTab";
 import CustomerTracker from "./CustomerTracker";
 
-type Tab = "overview" | "verify" | "history" | "track_dispute";
+type Tab = "overview" | "verify" | "history" | "farmers" | "track_dispute";
 
 const BASE_TABS: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
   { id: "overview",      label: "Overview",      icon: BarChart3 },
   { id: "verify",        label: "Verify",        icon: Search },
   { id: "history",       label: "History",       icon: History },
+  { id: "farmers",       label: "Farmers",       icon: Users },
   { id: "track_dispute", label: "Track Dispute", icon: AlertTriangle },
 ];
 
@@ -77,6 +79,7 @@ export default function ConsumerDashboard() {
           {tab === "overview"       && <OverviewTab />}
           {tab === "verify"         && <VerifyTab />}
           {tab === "history"        && <HistoryTab />}
+          {tab === "farmers"        && <FarmersTab />}
           {tab === "track_dispute"  && <CustomerTracker />}
         </motion.div>
       </div>

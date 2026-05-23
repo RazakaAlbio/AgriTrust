@@ -9,7 +9,6 @@ import ConsumerDashboard from "./pages/ConsumerDashboard.tsx";
 import AdminPanel from "./pages/AdminPanel.tsx";
 import AdminLoginGate from "./components/AdminLoginGate.tsx";
 import FarmerDashboard from "./pages/FarmerDashboard.tsx";
-import CustomerTracker from "./pages/CustomerTracker.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -26,8 +25,6 @@ const App = () => (
           <Route path="/dashboard" element={<ConsumerDashboard />} />
           <Route path="/admin" element={<AdminLoginGate><AdminPanel /></AdminLoginGate>} />
           <Route path="/farmer-dashboard" element={<FarmerDashboard />} />
-          <Route path="/track" element={<CustomerTracker />} />
-          <Route path="/track/:id" element={<CustomerTracker />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
