@@ -30,7 +30,7 @@ export interface DisputeResponse {
   id: string;
   created_at: string;
   dispute_id: string;
-  author_type: "farmer" | "admin";
+  author_type: "farmer" | "admin" | "customer";
   author_name: string;
   message: string;
 }
@@ -214,7 +214,7 @@ export async function updateDisputeStatus(
 
 export async function submitDisputeResponse(params: {
   dispute_id: string;
-  author_type: "farmer" | "admin";
+  author_type: "farmer" | "admin" | "customer";
   author_name: string;
   message: string;
 }): Promise<void> {

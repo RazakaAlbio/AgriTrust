@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   UserPlus, CreditCard, Server, Wifi, WifiOff,
   Loader2, CheckCircle2, LogOut, Link2, ExternalLink,
-  ShieldCheck, AlertTriangle, Copy, RefreshCw
+  ShieldCheck, AlertTriangle, Copy, RefreshCw, AlertCircle
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -21,6 +21,7 @@ import {
   buildBlockchainTxUrl,
   type GradingPayload,
 } from "@/lib/blockchain";
+import DisputesTab from "@/components/dashboard/DisputesTab";
 
 
 
@@ -423,10 +424,10 @@ function BlockchainTabContent() {
 // ── Main AdminPanel component ─────────────────────────────────────────────────
 export default function AdminPanel() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"register" | "rfid" | "devices" | "blockchain">("register");
+  const [activeTab, setActiveTab] = useState<"register" | "rfid" | "devices" | "blockchain" | "disputes">("register");
 
   // Register Form State
-  const [form, setForm] = useState({ name: "", rfid_tag: "", location: "", group_class: "" });
+  const [form, setForm] = useState({ name: "", email: "", passcode: "", rfid_tag: "", location: "", group_class: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
 
@@ -440,6 +441,7 @@ export default function AdminPanel() {
     { id: "rfid"       as const, label: "RFID Mgmt",  icon: CreditCard },
     { id: "devices"    as const, label: "Devices",    icon: Server     },
     { id: "blockchain" as const, label: "Blockchain", icon: Link2      },
+    { id: "disputes"   as const, label: "Disputes",   icon: AlertCircle },
   ];
 
   useEffect(() => {
@@ -464,7 +466,7 @@ export default function AdminPanel() {
     setIsSubmitting(false);
     if (!error) {
       setSuccessMsg("Farmer registered successfully!");
-      setForm({ name: "", rfid_tag: "", location: "", group_class: "" });
+      setForm({ name: "", email: "", passcode: "", rfid_tag: "", location: "", group_class: "" });
       setTimeout(() => setSuccessMsg(""), 3000);
       const { data } = await supabase.from('farmers').select('*');
       if (data) setFarmers(data);
@@ -561,6 +563,14 @@ export default function AdminPanel() {
                     <div>
                       <label className="data-label block mb-1.5">Full Name</label>
                       <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required className="w-full bg-secondary/50 border border-border p-2.5 font-mono text-sm focus:outline-none focus:border-primary text-foreground" />
+                    </div>
+                    <div>
+                      <label className="data-label block mb-1.5">Email (For Login)</label>
+                      <input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full bg-secondary/50 border border-border p-2.5 font-mono text-sm focus:outline-none focus:border-primary text-foreground" />
+                    </div>
+                    <div>
+                      <label className="data-label block mb-1.5">Passcode (For Login)</label>
+                      <input type="text" value={form.passcode} onChange={e => setForm({...form, passcode: e.target.value})} className="w-full bg-secondary/50 border border-border p-2.5 font-mono text-sm focus:outline-none focus:border-primary text-foreground" />
                     </div>
                     <div>
                       <label className="data-label block mb-1.5">RFID Tag (Hex)</label>
@@ -680,6 +690,16 @@ export default function AdminPanel() {
               {activeTab === "blockchain" && (
                 <motion.div key="blockchain" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                   <BlockchainTabContent />
+                </motion.div>
+              )}
+
+              {activeTab === "disputes" && (
+                <motion.div key="disputes" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <div className="mb-6">
+                    <h2 className="text-sm font-bold text-foreground">Dispute Resolution</h2>
+                    <p className="text-xs text-muted-foreground">Review, investigate, and resolve customer reports.</p>
+                  </div>
+                  <DisputesTab />
                 </motion.div>
               )}
             </AnimatePresence>

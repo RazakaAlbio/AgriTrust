@@ -5,36 +5,21 @@ import { Link } from "react-router-dom";
 import OverviewTab from "@/components/dashboard/OverviewTab";
 import VerifyTab from "@/components/dashboard/VerifyTab";
 import HistoryTab from "@/components/dashboard/HistoryTab";
-import FarmersTab from "@/components/dashboard/FarmersTab";
-import DisputesTab from "@/components/dashboard/DisputesTab";
-import { supabase } from "@/lib/supabase";
+import CustomerTracker from "./CustomerTracker";
 
-type Tab = "overview" | "verify" | "history" | "farmers" | "disputes";
+type Tab = "overview" | "verify" | "history" | "track_dispute";
 
 const BASE_TABS: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
-  { id: "overview", label: "Overview", icon: BarChart3 },
-  { id: "farmers",  label: "Farmers",  icon: Users },
-  { id: "verify",   label: "Verify",   icon: Search },
-  { id: "history",  label: "History",  icon: History },
+  { id: "overview",      label: "Overview",      icon: BarChart3 },
+  { id: "verify",        label: "Verify",        icon: Search },
+  { id: "history",       label: "History",       icon: History },
+  { id: "track_dispute", label: "Track Dispute", icon: AlertTriangle },
 ];
 
-export default function Dashboard() {
+export default function ConsumerDashboard() {
   const [tab, setTab] = useState<Tab>("overview");
-  const [isAdmin, setIsAdmin] = useState(false);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsAdmin(!!session);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setIsAdmin(!!session);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const TABS = isAdmin
-    ? [...BASE_TABS, { id: "disputes" as Tab, label: "Disputes", icon: AlertTriangle }]
-    : BASE_TABS;
+  const TABS = BASE_TABS;
 
   return (
     <div className="min-h-screen bg-background">
@@ -47,11 +32,11 @@ export default function Dashboard() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="font-mono text-lg font-bold tracking-tighter text-foreground">
-                AGRI<span className="text-primary">_</span>TRUST
+                CONSUMER_<span className="text-primary">DASHBOARD</span>
               </h1>
             </div>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">
-              Unified Dashboard · Edge-AI Grading Hub
+              Verify Batches · Track Disputes
             </p>
           </div>
         </div>
@@ -89,11 +74,10 @@ export default function Dashboard() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.2, 1, 0.3, 1] }}
         >
-          {tab === "overview"  && <OverviewTab />}
-          {tab === "farmers"   && <FarmersTab />}
-          {tab === "verify"    && <VerifyTab />}
-          {tab === "history"   && <HistoryTab />}
-          {tab === "disputes"  && isAdmin && <DisputesTab />}
+          {tab === "overview"       && <OverviewTab />}
+          {tab === "verify"         && <VerifyTab />}
+          {tab === "history"        && <HistoryTab />}
+          {tab === "track_dispute"  && <CustomerTracker />}
         </motion.div>
       </div>
     </div>

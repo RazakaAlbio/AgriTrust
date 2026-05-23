@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import {
   fetchDisputeById,
+  submitDisputeResponse,
   DISPUTE_TYPE_LABELS,
   type Dispute,
   type DisputeStatus,
@@ -31,6 +32,8 @@ export default function CustomerTracker() {
   const [dispute, setDispute] = useState<Dispute | null>(null);
   const [isLoading, setIsLoading] = useState(!!id);
   const [error, setError] = useState("");
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
 
   const handleSearch = async (searchId: string) => {
     if (!searchId.trim()) return;
@@ -58,6 +61,26 @@ export default function CustomerTracker() {
     }
   };
 
+  const handleReply = async () => {
+    if (!replyText.trim() || !dispute) return;
+    setSending(true);
+    try {
+      await submitDisputeResponse({
+        dispute_id:  dispute.id,
+        author_type: "customer",
+        author_name: dispute.customer_name,
+        message:     replyText.trim(),
+      });
+      setReplyText("");
+      // Refresh thread
+      handleSearch(dispute.id);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSending(false);
+    }
+  };
+
   useEffect(() => {
     if (id) {
       setQuery(id);
@@ -66,26 +89,8 @@ export default function CustomerTracker() {
   }, [id]);
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border p-4 flex items-center gap-4">
-        <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors p-2 -ml-2">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <div>
-          <div className="flex items-center gap-2">
-            <Link2 className="w-5 h-5 text-primary" />
-            <h1 className="font-mono text-lg font-bold tracking-tighter text-foreground">
-              DISPUTE_<span className="text-primary">TRACKER</span>
-            </h1>
-          </div>
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">
-            Monitor resolution progress
-          </p>
-        </div>
-      </div>
-
-      <div className="max-w-2xl mx-auto p-4 space-y-6">
+    <div className="bg-background">
+      <div className="max-w-2xl mx-auto space-y-6">
         {/* Search Input */}
         <div className="border border-border bg-background p-4 flex flex-col gap-3">
           <p className="data-label !mb-0">Look up your dispute ID</p>
@@ -209,24 +214,26 @@ export default function CustomerTracker() {
                   <p className="data-label !mb-0">Communication Thread</p>
                 </div>
 
-                {(!dispute.responses || dispute.responses.length === 0) ? (
-                  <p className="text-xs text-muted-foreground">No additional responses from admin or farmer yet.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {dispute.responses.map((r) => (
+                <div className="space-y-3 mb-4">
+                  {(!dispute.responses || dispute.responses.length === 0) ? (
+                    <p className="text-xs text-muted-foreground">No additional responses from admin or farmer yet.</p>
+                  ) : (
+                    dispute.responses.map((r) => (
                       <div
                         key={r.id}
                         className={`p-3 border text-sm ${
                           r.author_type === "admin"
                             ? "border-primary/30 bg-primary/5"
+                            : r.author_type === "customer"
+                            ? "border-border bg-secondary/10 ml-6"
                             : "border-green-500/30 bg-green-500/5"
                         }`}
                       >
                         <div className="flex justify-between mb-2">
                           <span className={`font-bold uppercase tracking-widest text-[10px] ${
-                            r.author_type === "admin" ? "text-primary" : "text-green-400"
+                            r.author_type === "admin" ? "text-primary" : r.author_type === "customer" ? "text-foreground" : "text-green-400"
                           }`}>
-                            {r.author_type === "admin" ? "AgriTrust Admin" : `Farmer: ${r.author_name}`}
+                            {r.author_type === "admin" ? "AgriTrust Admin" : r.author_type === "customer" ? "You" : `Farmer: ${r.author_name}`}
                           </span>
                           <span className="text-[10px] text-muted-foreground/60">
                             {new Date(r.created_at).toLocaleString()}
@@ -234,7 +241,27 @@ export default function CustomerTracker() {
                         </div>
                         <p className="text-foreground leading-relaxed">{r.message}</p>
                       </div>
-                    ))}
+                    ))
+                  )}
+                </div>
+
+                {/* Customer Reply Box */}
+                {dispute.status !== "resolved" && dispute.status !== "rejected" && (
+                  <div className="flex gap-2">
+                    <textarea
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder="Send a message to admin/farmer..."
+                      rows={2}
+                      className="flex-1 bg-background border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors resize-none"
+                    />
+                    <button
+                      onClick={handleReply}
+                      disabled={sending || !replyText.trim()}
+                      className="btn-rugged px-4 flex items-center justify-center gap-2 disabled:opacity-40 self-start mt-0"
+                    >
+                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send"}
+                    </button>
                   </div>
                 )}
               </div>

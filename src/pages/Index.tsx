@@ -7,26 +7,20 @@ const NAV_ITEMS = [
   {
     to: "/dashboard",
     icon: BarChart3,
-    title: "DASHBOARD",
-    desc: "Overview, verify products, scan history & farmer search",
+    title: "CONSUMER_DASHBOARD",
+    desc: "Verify products, track disputes & scan history",
   },
   {
-    to: "/farmer-disputes",
+    to: "/farmer-dashboard",
     icon: Sprout,
     title: "FARMER_PORTAL",
-    desc: "Lookup batches and respond to customer disputes",
-  },
-  {
-    to: "/track",
-    icon: Search,
-    title: "TRACK_DISPUTE",
-    desc: "Monitor your dispute resolution progress",
+    desc: "View batch analytics and manage disputes",
   },
   {
     to: "/admin",
     icon: Settings,
     title: "ADMIN_PANEL",
-    desc: "Register users, manage RFID tags, monitor device network",
+    desc: "Register users, manage RFID tags, monitor network",
   },
 ];
 
