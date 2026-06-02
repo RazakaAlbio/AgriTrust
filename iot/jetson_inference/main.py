@@ -3,9 +3,14 @@ import json
 import datetime
 import requests
 import serial
+import os
 from collections import Counter
 from ultralytics import YOLO
 import cv2
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- HARDWARE MODULES (Jetson Only) ---
 # Wrapping in try-except so your Windows IDE doesn't throw "missing-import" errors
@@ -26,8 +31,8 @@ except ImportError:
 # ---------------------------------------------------------
 
 # --- CONFIGURATION ---
-SUPABASE_URL = "https://your-project.supabase.co"
-SUPABASE_ANON_KEY = "your-anon-key"
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 FARMER_ID = "DEMO_FARMER_UUID"  # In a real app, fetched via RFID
 SERIAL_PORT = "/dev/ttyUSB0"    # or /dev/ttyACM0 (ESP32 connection)
 BAUD_RATE = 115200
@@ -120,6 +125,65 @@ def calculate_final_grade(ai_counts, total_weight_kg, gas_ppm):
     else:
         return "Grade C"
 
+# --- OFFLINE FIRST ARCHITECTURE ---
+OFFLINE_QUEUE_FILE = "offline_queue.json"
+
+def save_to_offline_queue(payload):
+    print(f"[*] Saving {payload['batch_id']} to offline queue...")
+    queue = []
+    if os.path.exists(OFFLINE_QUEUE_FILE):
+        try:
+            with open(OFFLINE_QUEUE_FILE, "r") as f:
+                queue = json.load(f)
+        except:
+            pass
+    queue.append(payload)
+    with open(OFFLINE_QUEUE_FILE, "w") as f:
+        json.dump(queue, f)
+
+def sync_offline_queue():
+    if not os.path.exists(OFFLINE_QUEUE_FILE):
+        return
+        
+    try:
+        with open(OFFLINE_QUEUE_FILE, "r") as f:
+            queue = json.load(f)
+    except:
+        return
+        
+    if not queue:
+        return
+        
+    print(f"[*] Found {len(queue)} items in offline queue. Attempting sync...")
+    
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+    endpoint = f"{SUPABASE_URL}/rest/v1/scans"
+    
+    synced_indices = []
+    for i, payload in enumerate(queue):
+        try:
+            res = requests.post(endpoint, headers=headers, json=payload, timeout=3)
+            if res.status_code == 201:
+                print(f"  [+] Synced {payload['batch_id']} from offline queue!")
+                synced_indices.append(i)
+            else:
+                print(f"  [!] Failed to sync {payload['batch_id']}: {res.status_code}")
+                break # Stop trying if network still bad
+        except Exception as e:
+            print(f"  [!] Network still offline, halting sync.")
+            break
+            
+    # Remove synced items
+    remaining_queue = [q for i, q in enumerate(queue) if i not in synced_indices]
+    with open(OFFLINE_QUEUE_FILE, "w") as f:
+        json.dump(remaining_queue, f)
+
+
 # --- SUPABASE POST ---
 def post_to_supabase(batch_id, overall_grade, ai_detections, weight_kg, gas_ppm):
     headers = {
@@ -141,13 +205,16 @@ def post_to_supabase(batch_id, overall_grade, ai_detections, weight_kg, gas_ppm)
     
     endpoint = f"{SUPABASE_URL}/rest/v1/scans"
     try:
-        res = requests.post(endpoint, headers=headers, json=payload)
+        res = requests.post(endpoint, headers=headers, json=payload, timeout=3)
         if res.status_code == 201:
             print(f"[+] Successfully posted {batch_id} to Supabase!")
+            sync_offline_queue() # If successful, try to sync any old backlog
         else:
             print(f"[!] Supabase POST failed: {res.status_code} - {res.text}")
+            save_to_offline_queue(payload)
     except Exception as e:
         print(f"[!] Network error posting to Supabase: {e}")
+        save_to_offline_queue(payload)
 
 
 # --- MAIN LOOP ---

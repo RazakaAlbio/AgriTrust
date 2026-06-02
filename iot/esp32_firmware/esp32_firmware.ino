@@ -15,7 +15,7 @@ HX711 scale;
 // 1. Set to 1.0, upload, place known weight.
 // 2. Read output, divide output by known weight.
 // 3. Put that number here.
-float CALIBRATION_FACTOR = 2280.f; 
+float CALIBRATION_FACTOR = -1033.3; 
 
 // --- MQ-135 Gas Sensor ---
 const int MQ135_PIN = 34; // ADC1 channel on ESP32
