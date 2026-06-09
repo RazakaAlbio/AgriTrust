@@ -1,0 +1,10 @@
+{
+  "ADMIN_CARD_UID": {
+    "role": "admin",
+    "name": "System Admin"
+  },
+  "1234567890": {
+    "role": "farmer",
+    "name": "Demo Farmer"
+  }
+}

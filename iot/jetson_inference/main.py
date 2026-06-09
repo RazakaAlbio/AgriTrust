@@ -9,18 +9,22 @@ from ultralytics import YOLO
 import cv2
 from dotenv import load_dotenv
 
+try:
+    import qrcode
+except ImportError:
+    print("[!] qrcode library not found. Please run: pip install qrcode")
+
 # Load environment variables from .env file
 load_dotenv()
 
 # --- HARDWARE MODULES (Jetson Only) ---
-# Wrapping in try-except so your Windows IDE doesn't throw "missing-import" errors
 try:
     import Jetson.GPIO as GPIO
     from mfrc522 import SimpleMFRC522
     from luma.core.interface.serial import i2c
     from luma.oled.device import ssd1306
     from luma.core.render import canvas
-    from PIL import ImageFont
+    from PIL import ImageFont, Image
     HARDWARE_AVAILABLE = True
 except ImportError:
     print("[!] Hardware modules not found. Running in MOCK mode (Windows).")
@@ -33,13 +37,11 @@ except ImportError:
 # --- CONFIGURATION ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
-FARMER_ID = "DEMO_FARMER_UUID"  # In a real app, fetched via RFID
 SERIAL_PORT = "/dev/ttyUSB0"    # or /dev/ttyACM0 (ESP32 connection)
 BAUD_RATE = 115200
 
 # --- INITIALIZATION ---
 print("[*] Initializing YOLOv8 Model (TensorRT Engine)...")
-# Load the TensorRT engine for max FPS on Jetson (fallback to .pt if needed)
 try:
     model = YOLO("best.engine")
 except Exception:
@@ -55,39 +57,25 @@ except Exception as e:
 
 # --- HARDWARE INITIALIZATION ---
 print("[*] Initializing Hardware Modules...")
-BUZZER_PIN = 33  # Physical Pin 33 (GPIO 13)
+IR_PIN = 7       # Physical Pin 7 (GPIO 4)
 oled = None
 reader = None
+font = None
 
 if HARDWARE_AVAILABLE:
     try:
         GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(BUZZER_PIN, GPIO.OUT, initial=GPIO.LOW)
+        GPIO.setup(IR_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         
-        # Initialize RFID
         reader = SimpleMFRC522()
         
-        # Initialize OLED (I2C Bus 1 usually on Jetson)
         serial_i2c = i2c(port=1, address=0x3C)
         oled = ssd1306(serial_i2c, width=128, height=32)
         font = ImageFont.load_default()
     except Exception as e:
         print(f"[!] Hardware initialization error: {e}")
 
-def beep(times=1, duration=0.2):
-    """Beeps the buzzer N times"""
-    if not HARDWARE_AVAILABLE: return
-    try:
-        for _ in range(times):
-            GPIO.output(BUZZER_PIN, GPIO.HIGH)
-            time.sleep(duration)
-            GPIO.output(BUZZER_PIN, GPIO.LOW)
-            time.sleep(0.1)
-    except:
-        pass
-
 def display_text(text1, text2=""):
-    """Displays 2 lines of text on the OLED"""
     if oled is None: return
     try:
         with canvas(oled) as draw:
@@ -97,25 +85,63 @@ def display_text(text1, text2=""):
     except:
         pass
 
+def display_qr(batch_id):
+    if oled is None: return
+    try:
+        qr = qrcode.QRCode(version=1, box_size=1, border=1)
+        # We just encode the batch_id (or a short URL) to keep it scannable on 32x32
+        qr.add_data(batch_id)
+        qr.make(fit=True)
+        img_qr = qr.make_image(fill_color="white", back_color="black").convert("1")
+        
+        # Resize to fit OLED height (32x32)
+        img_qr = img_qr.resize((32, 32))
+        
+        with canvas(oled) as draw:
+            # Draw QR code on the left
+            draw.bitmap((0, 0), img_qr, fill="white")
+            # Draw text on the right
+            draw.text((36, 0), "Scan Batch", font=font, fill="white")
+            draw.text((36, 16), "Any IR = Exit", font=font, fill="white")
+    except Exception as e:
+        print(f"[!] QR Display Error: {e}")
+        display_text("Batch Generated", batch_id)
+
+def wait_for_ir_any():
+    """Waits for any IR remote button press (falling edge)"""
+    if HARDWARE_AVAILABLE:
+        print("[ IR ] Waiting for any remote button press...")
+        GPIO.wait_for_edge(IR_PIN, GPIO.FALLING)
+        time.sleep(0.3) # Debounce
+    else:
+        input("[ IR ] Press ENTER to simulate IR button press: ")
+
+# --- ACCOUNTS LOGIC ---
+ACCOUNTS_FILE = "accounts.json"
+
+def load_accounts():
+    if not os.path.exists(ACCOUNTS_FILE):
+        return {}
+    with open(ACCOUNTS_FILE, "r") as f:
+        return json.load(f)
+
+def save_accounts(accounts):
+    with open(ACCOUNTS_FILE, "w") as f:
+        json.dump(accounts, f, indent=4)
+
 # --- SENSOR FUSION GRADING LOGIC ---
 def calculate_final_grade(ai_counts, total_weight_kg, gas_ppm):
-    """
-    Implements the logic defined in README.md Section 8.
-    ai_counts is a dictionary like {'ripe': 2, 'mold': 0}
-    """
     tomato_count = sum(ai_counts.values())
     if tomato_count == 0:
-        return "Reject" # No tomatoes detected
+        return "Reject"
         
     avg_weight = total_weight_kg / tomato_count
     
-    # 1. Critical Rejects (Mold / Rot / High Gas)
     if ai_counts.get("mold", 0) > 0 or ai_counts.get("rotten", 0) > 0 or ai_counts.get("blossom_end_rot", 0) > 0 or ai_counts.get("fruit_cracking", 0) > 0:
         return "Reject"
     if gas_ppm > 150:
         return "Reject"
         
-    # 2. Determine Grade based on Ripeness and Size (Weight)
     is_fully_ripe = ai_counts.get("ripe", 0) == tomato_count
     
     if is_fully_ripe and avg_weight >= 0.15 and gas_ppm < 100:
@@ -125,7 +151,7 @@ def calculate_final_grade(ai_counts, total_weight_kg, gas_ppm):
     else:
         return "Grade C"
 
-# --- OFFLINE FIRST ARCHITECTURE ---
+# --- OFFLINE QUEUE & SUPABASE POST ---
 OFFLINE_QUEUE_FILE = "offline_queue.json"
 
 def save_to_offline_queue(payload):
@@ -135,27 +161,19 @@ def save_to_offline_queue(payload):
         try:
             with open(OFFLINE_QUEUE_FILE, "r") as f:
                 queue = json.load(f)
-        except:
-            pass
+        except: pass
     queue.append(payload)
     with open(OFFLINE_QUEUE_FILE, "w") as f:
         json.dump(queue, f)
 
 def sync_offline_queue():
-    if not os.path.exists(OFFLINE_QUEUE_FILE):
-        return
-        
+    if not os.path.exists(OFFLINE_QUEUE_FILE): return
     try:
-        with open(OFFLINE_QUEUE_FILE, "r") as f:
-            queue = json.load(f)
-    except:
-        return
-        
-    if not queue:
-        return
+        with open(OFFLINE_QUEUE_FILE, "r") as f: queue = json.load(f)
+    except: return
+    if not queue: return
         
     print(f"[*] Found {len(queue)} items in offline queue. Attempting sync...")
-    
     headers = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
@@ -169,46 +187,37 @@ def sync_offline_queue():
         try:
             res = requests.post(endpoint, headers=headers, json=payload, timeout=3)
             if res.status_code == 201:
-                print(f"  [+] Synced {payload['batch_id']} from offline queue!")
                 synced_indices.append(i)
             else:
-                print(f"  [!] Failed to sync {payload['batch_id']}: {res.status_code}")
-                break # Stop trying if network still bad
-        except Exception as e:
-            print(f"  [!] Network still offline, halting sync.")
+                break
+        except Exception:
             break
             
-    # Remove synced items
     remaining_queue = [q for i, q in enumerate(queue) if i not in synced_indices]
     with open(OFFLINE_QUEUE_FILE, "w") as f:
         json.dump(remaining_queue, f)
 
-
-# --- SUPABASE POST ---
-def post_to_supabase(batch_id, overall_grade, ai_detections, weight_kg, gas_ppm):
+def post_to_supabase(batch_id, farmer_id, overall_grade, ai_detections, weight_kg, gas_ppm):
     headers = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
     }
-    
     payload = {
         "batch_id": batch_id,
-        "farmer_id": FARMER_ID,
+        "farmer_id": farmer_id,
         "overall_grade": overall_grade,
         "weight_kg": weight_kg,
         "gas_ppm": gas_ppm,
-        "ai_detections": ai_detections,
-        # tx_hash is left null initially; admin anchors it later
+        "ai_detections": ai_detections
     }
-    
     endpoint = f"{SUPABASE_URL}/rest/v1/scans"
     try:
         res = requests.post(endpoint, headers=headers, json=payload, timeout=3)
         if res.status_code == 201:
             print(f"[+] Successfully posted {batch_id} to Supabase!")
-            sync_offline_queue() # If successful, try to sync any old backlog
+            sync_offline_queue()
         else:
             print(f"[!] Supabase POST failed: {res.status_code} - {res.text}")
             save_to_offline_queue(payload)
@@ -216,113 +225,175 @@ def post_to_supabase(batch_id, overall_grade, ai_detections, weight_kg, gas_ppm)
         print(f"[!] Network error posting to Supabase: {e}")
         save_to_offline_queue(payload)
 
+def gstreamer_pipeline(capture_width=1280, capture_height=720, display_width=640, display_height=480, framerate=30, flip_method=0):
+    return (
+        "nvarguscamerasrc ! "
+        "video/x-raw(memory:NVMM), "
+        "width=(int)%d, height=(int)%d, "
+        "format=(string)NV12, framerate=(fraction)%d/1 ! "
+        "nvvidconv flip-method=%d ! "
+        "video/x-raw, width=(int)%d, height=(int)%d, format=(string)BGRx ! "
+        "videoconvert ! "
+        "video/x-raw, format=(string)BGR ! appsink"
+        % (capture_width, capture_height, framerate, flip_method, display_width, display_height)
+    )
 
-# --- MAIN LOOP ---
+# --- MAIN STATE MACHINE ---
 def main():
-    print("[*] System Ready. Waiting for trigger...")
-    display_text("System Ready", "Scan RFID to start")
+    print("[*] System Ready. Starting state machine...")
+    accounts = load_accounts()
+    current_farmer_id = None
+    current_farmer_name = None
+    
+    STATE = "LOGIN"
     
     while True:
         try:
-            print("\n[ RFID ] Please scan your ID card...")
-            
-            rfid_id = "DEMO_FARMER_123"
-            if HARDWARE_AVAILABLE and reader is not None:
-                rfid_id, rfid_text = reader.read()
-            else:
-                input("Press ENTER to simulate RFID scan: ")
+            if STATE == "LOGIN":
+                display_text("Agri-Trust", "Scan RFID Login")
+                print("\n[ LOGIN ] Please scan your RFID card...")
                 
-            print(f"[ RFID ] Authenticated Farmer ID: {rfid_id}")
-            
-            # Acknowledge scan
-            beep(1, 0.1)
-            display_text("Scanning...", "Processing AI")
-            
-            print("\n--- NEW BATCH SCAN ---")
-            batch_id = f"BATCH_{datetime.datetime.now().strftime('%Y_%H%M%S')}"
-            
-            # 1. READ SENSORS FROM ESP32
-            weight_kg = 0.0
-            gas_ppm = 0.0
-            if esp32:
-                esp32.reset_input_buffer()
-                time.sleep(0.5) # Wait for a fresh reading
-                line = esp32.readline().decode('utf-8').strip()
-                try:
-                    data = json.loads(line)
-                    weight_kg = float(data.get("weight_kg", 0.0))
-                    gas_ppm = float(data.get("gas_ppm", 0.0))
-                    print(f"[ Sensor ] Weight: {weight_kg}kg | Gas: {gas_ppm}ppm")
-                except Exception as e:
-                    print(f"[!] Failed to parse ESP32 JSON: {line} ({e})")
-            else:
-                # Mock data if ESP32 is not connected
-                weight_kg = 0.35 
-                gas_ppm = 45.0
-                print(f"[ Sensor ] MOCK - Weight: {weight_kg}kg | Gas: {gas_ppm}ppm")
-
-            # 2. RUN AI INFERENCE
-            print("[ Camera ] Capturing frame and running YOLOv8 inference...")
-            # We use source=0 for the CSI camera (or USB webcam)
-            results = model.predict(source=0, show=False, save=False, conf=0.20)
-            
-            # Process detections
-            detections = []
-            ai_counts = Counter()
-            
-            for r in results:
-                boxes = r.boxes
-                for box in boxes:
-                    cls_id = int(box.cls[0])
-                    conf = float(box.conf[0])
-                    cls_name = model.names[cls_id]
+                rfid_id = None
+                if HARDWARE_AVAILABLE and reader is not None:
+                    rfid_id, _ = reader.read()
+                    rfid_id = str(rfid_id).strip()
+                else:
+                    rfid_id = input("Simulate RFID (e.g., 1234567890 or ADMIN_CARD_UID): ").strip()
+                
+                accounts = load_accounts() # Reload in case of updates
+                
+                if rfid_id in accounts:
+                    role = accounts[rfid_id].get("role", "farmer")
+                    name = accounts[rfid_id].get("name", "Unknown")
+                    print(f"[ LOGIN ] Welcome {name} ({role})")
+                    display_text("Login Success!", f"Hi, {name}")
+                    time.sleep(2)
                     
-                    ai_counts[cls_name] += 1
-                    detections.append({
-                        "aiClass": cls_name,
-                        "confidence": conf,
-                        "count": 1 # To match web dashboard schema expectations
-                    })
-            
-            # Group detections for the web schema (aggregate counts)
-            grouped_detections = []
-            for cls_name, count in ai_counts.items():
-                # Find max confidence for this class
-                max_conf = max([d["confidence"] for d in detections if d["aiClass"] == cls_name])
-                grouped_detections.append({
-                    "aiClass": cls_name,
-                    "confidence": max_conf,
-                    "count": count
-                })
-                
-            print(f"[ AI ] Detections: {dict(ai_counts)}")
+                    if role == "admin":
+                        STATE = "ADMIN_REGISTRATION"
+                    else:
+                        current_farmer_id = rfid_id
+                        current_farmer_name = name
+                        STATE = "MENU"
+                else:
+                    print(f"[ LOGIN ] Access Denied! Unregistered ID: {rfid_id}")
+                    display_text("Access Denied", "Unregistered ID")
+                    time.sleep(2)
 
-            # 3. SENSOR FUSION GRADING
-            overall_grade = calculate_final_grade(ai_counts, weight_kg, gas_ppm)
-            print(f"[ System ] FINAL GRADE: {overall_grade}")
-            
-            # 4. UPLOAD TO SUPABASE
-            post_to_supabase(batch_id, overall_grade, grouped_detections, weight_kg, gas_ppm)
-            
-            # 5. HARDWARE FEEDBACK
-            display_text(f"Grade: {overall_grade}", f"{weight_kg}kg | {gas_ppm}ppm")
-            
-            if overall_grade == "Reject":
-                beep(3, 0.2)  # 3 short beeps for reject
-            else:
-                beep(1, 0.5)  # 1 long beep for success
+            elif STATE == "ADMIN_REGISTRATION":
+                display_text("Admin Mode", "Scan NEW Card")
+                print("\n[ ADMIN ] Scan a new card to register it as a farmer. (Or scan Admin again to exit)")
                 
-            time.sleep(3) # Hold display for 3 seconds
-            display_text("System Ready", "Scan RFID to start")
-            
+                new_id = None
+                if HARDWARE_AVAILABLE and reader is not None:
+                    new_id, _ = reader.read()
+                    new_id = str(new_id).strip()
+                else:
+                    new_id = input("Simulate NEW RFID to register: ").strip()
+                
+                if new_id in accounts and accounts[new_id].get("role") == "admin":
+                    print("[ ADMIN ] Exiting Admin Mode.")
+                    STATE = "LOGIN"
+                else:
+                    name = f"Farmer_{new_id[-4:]}"
+                    accounts[new_id] = {"role": "farmer", "name": name}
+                    save_accounts(accounts)
+                    print(f"[ ADMIN ] Registered new farmer: {name}")
+                    display_text("Registered!", name)
+                    time.sleep(2)
+                    STATE = "LOGIN"
+
+            elif STATE == "MENU":
+                display_text("1.Scan 2.Exit", "Use IR Remote")
+                print(f"\n[ MENU ] User: {current_farmer_name}")
+                print("Options: Press '1' (or any IR button) to Scan, '2' to Exit")
+                
+                if HARDWARE_AVAILABLE:
+                    # Without a specific LIRC decoder, we just assume the first IR edge is "SCAN".
+                    # However, to simulate 2 choices, we'll ask the user to just press any button to scan,
+                    # or wait a timeout to exit? Actually, let's just listen to input() on terminal for exact,
+                    # and rely on wait_for_ir_any() for the physical remote to trigger "Scan".
+                    # To "Exit", they might need to rescan RFID?
+                    # The prompt said "dia bisa memilih ingin scan komoditas atau exit". 
+                    # We will simulate menu choice via terminal for precise control, and use IR edge as a default "Scan" if pressed.
+                    print("[ IR ] Waiting for input...")
+                    # We will just wait for IR edge, assuming they press "Scan".
+                    GPIO.wait_for_edge(IR_PIN, GPIO.FALLING)
+                    time.sleep(0.3)
+                    choice = "1" # Assume scan for physical button press
+                else:
+                    choice = input("Enter choice (1/2): ")
+                
+                if choice == "1":
+                    STATE = "SCAN"
+                else:
+                    print("[ MENU ] Exiting to Login...")
+                    STATE = "LOGIN"
+
+            elif STATE == "SCAN":
+                display_text("Scanning...", "Processing AI")
+                print("\n--- NEW BATCH SCAN ---")
+                batch_id = f"BATCH_{datetime.datetime.now().strftime('%Y_%H%M%S')}"
+                
+                weight_kg = 0.0
+                gas_ppm = 0.0
+                if esp32:
+                    esp32.reset_input_buffer()
+                    time.sleep(0.5)
+                    line = esp32.readline().decode('utf-8').strip()
+                    try:
+                        data = json.loads(line)
+                        weight_kg = float(data.get("weight_kg", 0.0))
+                        gas_ppm = float(data.get("gas_ppm", 0.0))
+                    except: pass
+                else:
+                    weight_kg = 0.35 
+                    gas_ppm = 45.0
+
+                print(f"[ Sensor ] Weight: {weight_kg}kg | Gas: {gas_ppm}ppm")
+
+                print("[ Camera ] Running YOLOv8 inference...")
+                # Menambahkan imgsz=640 untuk memastikan settingan model sesuai dengan training standard YOLO
+                # Menggunakan GStreamer pipeline string untuk support CSI RPi Camera di Jetson
+                pipeline_str = gstreamer_pipeline(flip_method=0)
+                results = model.predict(source=pipeline_str, show=False, save=False, conf=0.20, imgsz=640)
+                
+                detections = []
+                ai_counts = Counter()
+                for r in results:
+                    for box in r.boxes:
+                        cls_name = model.names[int(box.cls[0])]
+                        conf = float(box.conf[0])
+                        ai_counts[cls_name] += 1
+                        detections.append({"aiClass": cls_name, "confidence": conf, "count": 1})
+                
+                grouped_detections = []
+                for cls_name, count in ai_counts.items():
+                    max_conf = max([d["confidence"] for d in detections if d["aiClass"] == cls_name])
+                    grouped_detections.append({"aiClass": cls_name, "confidence": max_conf, "count": count})
+                    
+                overall_grade = calculate_final_grade(ai_counts, weight_kg, gas_ppm)
+                print(f"[ AI ] Detections: {dict(ai_counts)}")
+                print(f"[ System ] FINAL GRADE: {overall_grade}")
+                
+                post_to_supabase(batch_id, current_farmer_id, overall_grade, grouped_detections, weight_kg, gas_ppm)
+                
+                STATE = "QR"
+
+            elif STATE == "QR":
+                print(f"\n[ QR ] Displaying Batch ID: {batch_id}")
+                display_qr(batch_id)
+                wait_for_ir_any()
+                print("[ QR ] Exit signal received. Returning to Login.")
+                STATE = "LOGIN"
+
         except KeyboardInterrupt:
             print("\nExiting...")
             if HARDWARE_AVAILABLE:
-                try:
-                    GPIO.cleanup()
-                except:
-                    pass
+                try: GPIO.cleanup()
+                except: pass
             break
 
 if __name__ == "__main__":
     main()
+

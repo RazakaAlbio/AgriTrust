@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   UserPlus, CreditCard, Server, Wifi, WifiOff,
   Loader2, CheckCircle2, LogOut, Link2, ExternalLink,
-  ShieldCheck, AlertTriangle, Copy, RefreshCw, AlertCircle
+  ShieldCheck, AlertTriangle, Copy, RefreshCw, AlertCircle,
+  UploadCloud, FileJson
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -424,7 +425,7 @@ function BlockchainTabContent() {
 // ── Main AdminPanel component ─────────────────────────────────────────────────
 export default function AdminPanel() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"register" | "rfid" | "devices" | "blockchain" | "disputes">("register");
+  const [activeTab, setActiveTab] = useState<"register" | "rfid" | "devices" | "blockchain" | "disputes" | "sync">("register");
 
   // Register Form State
   const [form, setForm] = useState({ name: "", email: "", passcode: "", rfid_tag: "", location: "", group_class: "" });
@@ -442,6 +443,7 @@ export default function AdminPanel() {
     { id: "devices"    as const, label: "Devices",    icon: Server     },
     { id: "blockchain" as const, label: "Blockchain", icon: Link2      },
     { id: "disputes"   as const, label: "Disputes",   icon: AlertCircle },
+    { id: "sync"       as const, label: "Offline Sync", icon: UploadCloud },
   ];
 
   useEffect(() => {
@@ -700,6 +702,60 @@ export default function AdminPanel() {
                     <p className="text-xs text-muted-foreground">Review, investigate, and resolve customer reports.</p>
                   </div>
                   <DisputesTab />
+                </motion.div>
+              )}
+
+              {activeTab === "sync" && (
+                <motion.div key="sync" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <div>
+                    <h2 className="text-sm font-bold text-foreground">Offline JSON Sync</h2>
+                    <p className="text-xs text-muted-foreground">Upload the `offline_queue.json` file from a Jetson Nano that lost network connection.</p>
+                  </div>
+                  
+                  <div className="border border-dashed border-border p-8 text-center bg-secondary/10">
+                    <input 
+                      type="file" 
+                      accept=".json" 
+                      id="json-upload" 
+                      className="hidden" 
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        
+                        const reader = new FileReader();
+                        reader.onload = async (event) => {
+                          try {
+                            const text = event.target?.result as string;
+                            const data = JSON.parse(text);
+                            if (!Array.isArray(data)) throw new Error("JSON must be an array of scans.");
+                            
+                            // Insert into Supabase
+                            const { error } = await supabase.from('scans').insert(data);
+                            if (error) throw error;
+                            
+                            alert(`Successfully imported ${data.length} offline scans!`);
+                          } catch (err: any) {
+                            alert(`Failed to import JSON: ${err.message}`);
+                          }
+                        };
+                        reader.readAsText(file);
+                        
+                        // Reset input so the same file can be selected again if needed
+                        e.target.value = "";
+                      }} 
+                    />
+                    <label htmlFor="json-upload" className="cursor-pointer flex flex-col items-center justify-center gap-3 hover:opacity-80 transition-opacity">
+                      <FileJson className="w-10 h-10 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-bold text-foreground">Select offline_queue.json</p>
+                        <p className="text-xs text-muted-foreground mt-1">Click to browse your files</p>
+                      </div>
+                      <div className="btn-rugged px-4 py-2 mt-2 text-xs inline-flex items-center gap-2">
+                        <UploadCloud className="w-3.5 h-3.5" />
+                        Browse File
+                      </div>
+                    </label>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
