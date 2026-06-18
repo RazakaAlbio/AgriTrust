@@ -80,7 +80,7 @@ void loop() {
   Serial.print(", \"gas_ppm\": ");
   Serial.print(gas_ppm, 0);
   Serial.print(", \"rfid_uid\": \"");
-  Serial.print(rfid_uid); // Akan kosong ("") jika tidak ada kartu, berisi ID jika ada kartu baru
+  Serial.print(last_scanned_uid); // Gunakan last_scanned_uid agar bertahan selama 2 detik dan tidak terhapus oleh reset_input_buffer Jetson
   Serial.println("\"}");
   
   // Send data twice a second

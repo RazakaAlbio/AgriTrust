@@ -295,7 +295,7 @@ export default function VerifyTab() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className={`font-mono text-sm font-bold ${info.textClass}`}>{info.grade}</p>
+                        <p className={`font-mono text-sm font-bold ${info.textClass}`}>Visual: {info.grade}</p>
                         <p className="text-[10px] text-muted-foreground">{(det.confidence * 100).toFixed(0)}%</p>
                       </div>
                     </div>

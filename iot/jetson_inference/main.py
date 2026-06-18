@@ -70,6 +70,7 @@ if HARDWARE_AVAILABLE:
     try:
         GPIO.setmode(GPIO.BOARD)
         GPIO.setup(IR_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.add_event_detect(IR_PIN, GPIO.FALLING) # Set IR event detection at startup
         
         serial_i2c = i2c(port=1, address=0x3C)
         oled = ssd1306(serial_i2c, width=128, height=32)
@@ -110,34 +111,46 @@ def display_qr(batch_id):
         print(f"[!] QR Display Error: {e}")
         display_text("Batch Generated", batch_id)
 
+def get_latest_esp32_data():
+    """Membaca semua baris di serial buffer dan mengembalikan data JSON yang paling baru (paling bawah)."""
+    if esp32 is None: return None
+    latest_data = None
+    while esp32.in_waiting > 0:
+        try:
+            line = esp32.readline().decode('utf-8', errors='ignore').strip()
+            if line.startswith("{") and line.endswith("}"):
+                latest_data = json.loads(line)
+        except:
+            pass
+    return latest_data
+
 def wait_for_ir_or_rfid():
     """Waits for any IR remote button press OR an RFID tap."""
     if HARDWARE_AVAILABLE:
         print("[ IR ] Waiting for any remote button press OR RFID tap...")
         if esp32 is not None:
-            # Clean up old data in buffer
             esp32.reset_input_buffer()
-            time.sleep(0.1) # Wait for a fresh line to arrive
+            # Pastikan tidak ada sisa kartu yang tertempel sebelum mulai menunggu perintah
+            while True:
+                data = get_latest_esp32_data()
+                if data is not None and data.get("rfid_uid", "") == "":
+                    break
+                time.sleep(0.05)
             
         while True:
-            # Wait for IR up to 100ms
-            channel = GPIO.wait_for_edge(IR_PIN, GPIO.FALLING, timeout=100)
-            if channel is not None:
+            # Check IR (Non-blocking)
+            if GPIO.event_detected(IR_PIN):
                 time.sleep(0.3) # Debounce
                 return "IR"
                 
             # Check ESP32
             if esp32 is not None:
-                while esp32.in_waiting > 0:
-                    try:
-                        line = esp32.readline().decode('utf-8', errors='ignore').strip()
-                        if line.startswith("{") and line.endswith("}"):
-                            data = json.loads(line)
-                            rfid = data.get("rfid_uid", "")
-                            if rfid != "":
-                                return "RFID"
-                    except Exception:
-                        pass
+                data = get_latest_esp32_data()
+                if data is not None:
+                    if data.get("rfid_uid", "") != "":
+                        return "RFID"
+            
+            time.sleep(0.05)
     else:
         input("[ IR ] Press ENTER to simulate action: ")
         return "IR"
@@ -146,16 +159,22 @@ def wait_for_rfid_from_esp32():
     if esp32 is None:
         return None
     esp32.reset_input_buffer()
+    
+    # 1. Pastikan buffer bersih dari kartu sebelumnya (tunggu sampai rfid_uid == "")
     while True:
-        try:
-            line = esp32.readline().decode('utf-8', errors='ignore').strip()
-            if line.startswith("{") and line.endswith("}"):
-                data = json.loads(line)
-                rfid = data.get("rfid_uid", "")
-                if rfid != "":
-                    return rfid
-        except Exception:
-            pass
+        data = get_latest_esp32_data()
+        if data is not None and data.get("rfid_uid", "") == "":
+            break
+        time.sleep(0.05)
+
+    # 2. Tunggu kartu baru
+    while True:
+        data = get_latest_esp32_data()
+        if data is not None:
+            rfid = data.get("rfid_uid", "")
+            if rfid != "":
+                return rfid
+        time.sleep(0.05)
 
 # --- ACCOUNTS LOGIC ---
 ACCOUNTS_FILE = "accounts.json"
@@ -265,7 +284,7 @@ def sync_offline_queue():
     with open(OFFLINE_QUEUE_FILE, "w") as f:
         json.dump(remaining_queue, f)
 
-def post_to_supabase(batch_id, current_farmer_id, overall_grade, ai_detections, weight_kg, gas_ppm, frame=None):
+def post_to_supabase(batch_id, current_farmer_id, overall_grade, ai_detections, weight_kg, gas_ppm, frame=None, avg_conf=0.0):
     # Resolve the physical RFID tag to the Supabase UUID
     farmer_uuid = get_farmer_uuid(current_farmer_id)
     
@@ -290,8 +309,9 @@ def post_to_supabase(batch_id, current_farmer_id, overall_grade, ai_detections, 
 
     payload = {
         "batch_id": batch_id,
-        "farmer_id": farmer_uuid or current_farmer_id, # Fallback to raw ID to queue it if offline
+        "farmer_id": farmer_uuid or current_farmer_id,
         "overall_grade": overall_grade,
+        "confidence_score": avg_conf,
         "weight_kg": weight_kg,
         "gas_ppm": gas_ppm,
         "ai_detections": ai_detections
@@ -502,15 +522,24 @@ def main():
                         detections.append({"aiClass": cls_name, "confidence": conf, "count": 1})
                 
                 grouped_detections = []
-                for cls_name, count in ai_counts.items():
-                    max_conf = max([d["confidence"] for d in detections if d["aiClass"] == cls_name])
-                    grouped_detections.append({"aiClass": cls_name, "confidence": max_conf, "count": count})
+                avg_conf = 0.0
+                if ai_counts:
+                    conf_sum = 0
+                    for cls_name, count in ai_counts.items():
+                        max_conf = max([d["confidence"] for d in detections if d["aiClass"] == cls_name])
+                        grouped_detections.append({"aiClass": cls_name, "confidence": max_conf, "count": count})
+                        conf_sum += max_conf
+                    avg_conf = conf_sum / len(ai_counts)
                     
                 overall_grade = calculate_final_grade(ai_counts, weight_kg, gas_ppm)
                 print(f"[ AI ] Detections: {dict(ai_counts)}")
                 print(f"[ System ] FINAL GRADE: {overall_grade}")
                 
-                post_to_supabase(batch_id, current_farmer_id, overall_grade, grouped_detections, weight_kg, gas_ppm, frame)
+                # Override confidence for payload, grouped_detections is used for AI array
+                # The post_to_supabase payload construction uses ai_detections[0]['confidence'] if we just pass grouped_detections, 
+                # but let's pass it explicitly. Wait, post_to_supabase doesn't take avg_conf.
+                # Let's fix the post_to_supabase definition and call.
+                post_to_supabase(batch_id, current_farmer_id, overall_grade, grouped_detections, weight_kg, gas_ppm, frame, avg_conf)
                 
                 STATE = "QR"
 
@@ -518,7 +547,7 @@ def main():
                 print(f"\n[ QR ] Displaying Batch ID: {batch_id}")
                 display_qr(batch_id)
                 wait_for_ir_or_rfid()
-                print("[ QR ] Exit signal received. Returning to Login.")
+                print("[ QR ] Exit signal received. Returning to Login...")
                 STATE = "LOGIN"
 
         except KeyboardInterrupt:
