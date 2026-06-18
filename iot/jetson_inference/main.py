@@ -90,9 +90,10 @@ def display_text(text1, text2=""):
 def display_qr(batch_id):
     if oled is None: return
     try:
-        qr = qrcode.QRCode(version=1, box_size=1, border=1)
-        # We just encode the batch_id (or a short URL) to keep it scannable on 32x32
-        qr.add_data(batch_id)
+        qr = qrcode.QRCode(version=3, box_size=1, border=1)
+        # Link langsung ke Web Dashboard yang sudah di-hosting di Azure
+        verify_url = f"https://agritrust.tech/verify?batch={batch_id}"
+        qr.add_data(verify_url)
         qr.make(fit=True)
         img_qr = qr.make_image(fill_color="white", back_color="black").convert("1")
         
@@ -264,10 +265,29 @@ def sync_offline_queue():
     with open(OFFLINE_QUEUE_FILE, "w") as f:
         json.dump(remaining_queue, f)
 
-def post_to_supabase(batch_id, current_farmer_id, overall_grade, ai_detections, weight_kg, gas_ppm):
+def post_to_supabase(batch_id, current_farmer_id, overall_grade, ai_detections, weight_kg, gas_ppm, frame=None):
     # Resolve the physical RFID tag to the Supabase UUID
     farmer_uuid = get_farmer_uuid(current_farmer_id)
     
+    image_url = None
+    if frame is not None and SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            _, buffer = cv2.imencode('.jpg', frame)
+            storage_url = f"{SUPABASE_URL}/storage/v1/object/scan-images/{batch_id}.jpg"
+            st_headers = {
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+                "Content-Type": "image/jpeg"
+            }
+            res_img = requests.post(storage_url, headers=st_headers, data=buffer.tobytes(), timeout=5)
+            if res_img.status_code in [200, 201]:
+                image_url = f"{SUPABASE_URL}/storage/v1/object/public/scan-images/{batch_id}.jpg"
+                print("[+] Image uploaded to Supabase Storage.")
+            else:
+                print(f"[!] Image upload failed: {res_img.status_code}")
+        except Exception as e:
+            print(f"[!] Error uploading image: {e}")
+
     payload = {
         "batch_id": batch_id,
         "farmer_id": farmer_uuid or current_farmer_id, # Fallback to raw ID to queue it if offline
@@ -277,6 +297,9 @@ def post_to_supabase(batch_id, current_farmer_id, overall_grade, ai_detections, 
         "ai_detections": ai_detections
     }
     
+    if image_url:
+        payload["image_url"] = image_url
+        
     if not farmer_uuid:
         print(f"[!] Supabase Warning: No Web Account found matching RFID '{current_farmer_id}'. Queueing offline.")
         save_to_offline_queue(payload)
@@ -487,7 +510,7 @@ def main():
                 print(f"[ AI ] Detections: {dict(ai_counts)}")
                 print(f"[ System ] FINAL GRADE: {overall_grade}")
                 
-                post_to_supabase(batch_id, current_farmer_id, overall_grade, grouped_detections, weight_kg, gas_ppm)
+                post_to_supabase(batch_id, current_farmer_id, overall_grade, grouped_detections, weight_kg, gas_ppm, frame)
                 
                 STATE = "QR"
 

@@ -488,9 +488,10 @@ export default function AdminPanel() {
 
   const handleRevokeRfid = async (id: string) => {
     if (!confirm("Revoke this RFID tag? The farmer will not be able to scan.")) return;
-    const { error } = await supabase.from('farmers').update({ rfid_tag: null }).eq('id', id);
+    const revokedTag = `REVOKED-${Math.random().toString(36).substring(2,8).toUpperCase()}`;
+    const { error } = await supabase.from('farmers').update({ rfid_tag: revokedTag }).eq('id', id);
     if (!error) {
-      setFarmers(farmers.map(f => f.id === id ? { ...f, rfid_tag: null } : f));
+      setFarmers(farmers.map(f => f.id === id ? { ...f, rfid_tag: revokedTag } : f));
     } else {
       alert("Failed to revoke RFID: " + error.message);
     }
@@ -625,23 +626,25 @@ export default function AdminPanel() {
                         <tbody className="divide-y divide-border">
                           {farmers.map((farmer, i) => (
                             <tr key={i} className="hover:bg-secondary/10">
-                              <td className="p-3 font-mono text-sm text-primary">{farmer.rfid_tag || "UNASSIGNED"}</td>
+                              <td className="p-3 font-mono text-sm text-primary">
+                                {(!farmer.rfid_tag || farmer.rfid_tag.startsWith('REVOKED-')) ? "UNASSIGNED" : farmer.rfid_tag}
+                              </td>
                               <td className="p-3 text-sm text-foreground">{farmer.name}</td>
                               <td className="p-3">
-                                {farmer.rfid_tag ? (
-                                  <span className="text-[10px] uppercase tracking-widest font-bold text-green-500 border border-green-500/30 bg-green-500/10 px-2 py-0.5">Linked</span>
-                                ) : (
+                                {(!farmer.rfid_tag || farmer.rfid_tag.startsWith('REVOKED-')) ? (
                                   <span className="text-[10px] uppercase tracking-widest font-bold text-orange-500 border border-orange-500/30 bg-orange-500/10 px-2 py-0.5">No Tag</span>
+                                ) : (
+                                  <span className="text-[10px] uppercase tracking-widest font-bold text-green-500 border border-green-500/30 bg-green-500/10 px-2 py-0.5">Linked</span>
                                 )}
                               </td>
                               <td className="p-3 text-right space-x-2">
-                                {farmer.rfid_tag ? (
-                                  <button onClick={() => handleRevokeRfid(farmer.id)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-orange-500 border border-border hover:border-orange-500/50 px-2 py-1 transition-colors">
-                                    Revoke
-                                  </button>
-                                ) : (
+                                {(!farmer.rfid_tag || farmer.rfid_tag.startsWith('REVOKED-')) ? (
                                   <button onClick={() => handleAssignRfid(farmer.id)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-green-500 border border-border hover:border-green-500/50 px-2 py-1 transition-colors">
                                     Assign
+                                  </button>
+                                ) : (
+                                  <button onClick={() => handleRevokeRfid(farmer.id)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-orange-500 border border-border hover:border-orange-500/50 px-2 py-1 transition-colors">
+                                    Revoke
                                   </button>
                                 )}
                                 <button onClick={() => handleDeleteFarmer(farmer.id)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-destructive border border-border hover:border-destructive/50 px-2 py-1 transition-colors">
