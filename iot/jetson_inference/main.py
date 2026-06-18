@@ -20,7 +20,6 @@ load_dotenv()
 # --- HARDWARE MODULES (Jetson Only) ---
 try:
     import Jetson.GPIO as GPIO
-    from mfrc522 import SimpleMFRC522
     from luma.core.interface.serial import i2c
     from luma.oled.device import ssd1306
     from luma.core.render import canvas
@@ -59,15 +58,12 @@ except Exception as e:
 print("[*] Initializing Hardware Modules...")
 IR_PIN = 7       # Physical Pin 7 (GPIO 4)
 oled = None
-reader = None
 font = None
 
 if HARDWARE_AVAILABLE:
     try:
         GPIO.setmode(GPIO.BOARD)
         GPIO.setup(IR_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        
-        reader = SimpleMFRC522()
         
         serial_i2c = i2c(port=1, address=0x3C)
         oled = ssd1306(serial_i2c, width=128, height=32)
@@ -115,6 +111,21 @@ def wait_for_ir_any():
         time.sleep(0.3) # Debounce
     else:
         input("[ IR ] Press ENTER to simulate IR button press: ")
+
+def wait_for_rfid_from_esp32():
+    if esp32 is None:
+        return None
+    esp32.reset_input_buffer()
+    while True:
+        try:
+            line = esp32.readline().decode('utf-8', errors='ignore').strip()
+            if line.startswith("{") and line.endswith("}"):
+                data = json.loads(line)
+                rfid = data.get("rfid_uid", "")
+                if rfid != "":
+                    return rfid
+        except Exception:
+            pass
 
 # --- ACCOUNTS LOGIC ---
 ACCOUNTS_FILE = "accounts.json"
@@ -225,18 +236,47 @@ def post_to_supabase(batch_id, farmer_id, overall_grade, ai_detections, weight_k
         print(f"[!] Network error posting to Supabase: {e}")
         save_to_offline_queue(payload)
 
-def gstreamer_pipeline(capture_width=1280, capture_height=720, display_width=640, display_height=480, framerate=30, flip_method=0):
-    return (
-        "nvarguscamerasrc ! "
-        "video/x-raw(memory:NVMM), "
-        "width=(int)%d, height=(int)%d, "
-        "format=(string)NV12, framerate=(fraction)%d/1 ! "
-        "nvvidconv flip-method=%d ! "
-        "video/x-raw, width=(int)%d, height=(int)%d, format=(string)BGRx ! "
-        "videoconvert ! "
-        "video/x-raw, format=(string)BGR ! appsink"
-        % (capture_width, capture_height, framerate, flip_method, display_width, display_height)
-    )
+def open_webcam(device_index=0, width=1920, height=1080, fps=30):
+    """Open Rexus SW10 USB Webcam (1080p/30fps) preferring MJPEG format.
+    
+    Rexus SW10 Specs:
+      - Resolution : 1080p (1920x1080)
+      - Frame Rate : 30 fps
+      - Focus      : Fixed focus
+      - FOV        : 80 degrees
+      - Formats    : MJPEG / YUV2 (YUYV)
+    
+    MJPEG is preferred over YUYV because USB 2.0 bandwidth is insufficient
+    for uncompressed 1080p@30fps YUYV (approx. 1.5 Gbps raw vs 480 Mbps bus).
+    MJPEG compresses on-chip and delivers smooth 1080p@30fps over USB 2.0.
+    """
+    cap = cv2.VideoCapture(device_index, cv2.CAP_V4L2)
+    if not cap.isOpened():
+        # Fallback: let OpenCV pick the backend automatically
+        cap = cv2.VideoCapture(device_index)
+    if not cap.isOpened():
+        return None
+
+    # Request MJPEG pixel format to utilize on-chip compression
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cap.set(cv2.CAP_PROP_FPS, fps)
+
+    # Log actual negotiated settings
+    actual_w   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h   = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    actual_fps = cap.get(cv2.CAP_PROP_FPS)
+    print(f"[ Camera ] Opened: {actual_w}x{actual_h} @ {actual_fps:.0f}fps (device {device_index})")
+    return cap
+
+
+def capture_frame(cap, warmup_frames=5):
+    """Grab a stable frame after allowing auto-exposure to settle."""
+    for _ in range(warmup_frames):
+        cap.grab()  # discard stale buffered frames
+    ret, frame = cap.read()
+    return ret, frame
 
 # --- MAIN STATE MACHINE ---
 def main():
@@ -254,9 +294,8 @@ def main():
                 print("\n[ LOGIN ] Please scan your RFID card...")
                 
                 rfid_id = None
-                if HARDWARE_AVAILABLE and reader is not None:
-                    rfid_id, _ = reader.read()
-                    rfid_id = str(rfid_id).strip()
+                if HARDWARE_AVAILABLE and esp32 is not None:
+                    rfid_id = wait_for_rfid_from_esp32()
                 else:
                     rfid_id = input("Simulate RFID (e.g., 1234567890 or ADMIN_CARD_UID): ").strip()
                 
@@ -285,9 +324,8 @@ def main():
                 print("\n[ ADMIN ] Scan a new card to register it as a farmer. (Or scan Admin again to exit)")
                 
                 new_id = None
-                if HARDWARE_AVAILABLE and reader is not None:
-                    new_id, _ = reader.read()
-                    new_id = str(new_id).strip()
+                if HARDWARE_AVAILABLE and esp32 is not None:
+                    new_id = wait_for_rfid_from_esp32()
                 else:
                     new_id = input("Simulate NEW RFID to register: ").strip()
                 
@@ -352,11 +390,25 @@ def main():
 
                 print(f"[ Sensor ] Weight: {weight_kg}kg | Gas: {gas_ppm}ppm")
 
-                print("[ Camera ] Running YOLOv8 inference...")
-                # Menambahkan imgsz=640 untuk memastikan settingan model sesuai dengan training standard YOLO
-                # Menggunakan GStreamer pipeline string untuk support CSI RPi Camera di Jetson
-                pipeline_str = gstreamer_pipeline(flip_method=0)
-                results = model.predict(source=pipeline_str, show=False, save=False, conf=0.20, imgsz=640)
+                print("[ Camera ] Running YOLOv8 inference (Rexus SW10 USB Webcam)...")
+                # Rexus SW10 USB Webcam: 1080p @ 30fps, MJPEG format
+                # device_index=0 assumes /dev/video0 — adjust if needed
+                cap = open_webcam(device_index=0)
+                frame = None
+                if cap is not None:
+                    ret, frame = capture_frame(cap, warmup_frames=5)
+                    cap.release()
+                    if not ret or frame is None:
+                        print("[ Camera ] ERROR: Failed to capture frame from webcam.")
+                        STATE = "LOGIN"
+                        continue
+                else:
+                    print("[ Camera ] ERROR: Could not open webcam (device 0).")
+                    STATE = "LOGIN"
+                    continue
+
+                # imgsz=640 matches YOLO training standard (model resizes internally)
+                results = model.predict(source=frame, show=False, save=False, conf=0.20, imgsz=640)
                 
                 detections = []
                 ai_counts = Counter()
