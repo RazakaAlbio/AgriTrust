@@ -4,7 +4,13 @@ import datetime
 import requests
 import serial
 import os
+import numpy as np
 from collections import Counter
+
+# --- FIX NUMPY BOOL FOR TENSORRT ---
+if not hasattr(np, 'bool'):
+    np.bool = np.bool_
+
 from ultralytics import YOLO
 import cv2
 from dotenv import load_dotenv
@@ -103,14 +109,37 @@ def display_qr(batch_id):
         print(f"[!] QR Display Error: {e}")
         display_text("Batch Generated", batch_id)
 
-def wait_for_ir_any():
-    """Waits for any IR remote button press (falling edge)"""
+def wait_for_ir_or_rfid():
+    """Waits for any IR remote button press OR an RFID tap."""
     if HARDWARE_AVAILABLE:
-        print("[ IR ] Waiting for any remote button press...")
-        GPIO.wait_for_edge(IR_PIN, GPIO.FALLING)
-        time.sleep(0.3) # Debounce
+        print("[ IR ] Waiting for any remote button press OR RFID tap...")
+        if esp32 is not None:
+            # Clean up old data in buffer
+            esp32.reset_input_buffer()
+            time.sleep(0.1) # Wait for a fresh line to arrive
+            
+        while True:
+            # Wait for IR up to 100ms
+            channel = GPIO.wait_for_edge(IR_PIN, GPIO.FALLING, timeout=100)
+            if channel is not None:
+                time.sleep(0.3) # Debounce
+                return "IR"
+                
+            # Check ESP32
+            if esp32 is not None:
+                while esp32.in_waiting > 0:
+                    try:
+                        line = esp32.readline().decode('utf-8', errors='ignore').strip()
+                        if line.startswith("{") and line.endswith("}"):
+                            data = json.loads(line)
+                            rfid = data.get("rfid_uid", "")
+                            if rfid != "":
+                                return "RFID"
+                    except Exception:
+                        pass
     else:
-        input("[ IR ] Press ENTER to simulate IR button press: ")
+        input("[ IR ] Press ENTER to simulate action: ")
+        return "IR"
 
 def wait_for_rfid_from_esp32():
     if esp32 is None:
@@ -177,6 +206,24 @@ def save_to_offline_queue(payload):
     with open(OFFLINE_QUEUE_FILE, "w") as f:
         json.dump(queue, f)
 
+# --- SUPABASE UTILS ---
+def get_farmer_uuid(rfid_tag):
+    """Fetches the farmer's UUID from Supabase using their RFID tag."""
+    if not rfid_tag or not SUPABASE_URL: return None
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}"
+    }
+    try:
+        res = requests.get(f"{SUPABASE_URL}/rest/v1/farmers?rfid_tag=eq.{rfid_tag}&select=id", headers=headers, timeout=3)
+        if res.status_code == 200:
+            data = res.json()
+            if len(data) > 0:
+                return data[0]["id"]
+    except Exception:
+        pass
+    return None
+
 def sync_offline_queue():
     if not os.path.exists(OFFLINE_QUEUE_FILE): return
     try:
@@ -196,6 +243,15 @@ def sync_offline_queue():
     synced_indices = []
     for i, payload in enumerate(queue):
         try:
+            # Resolve UUID if it's still a raw RFID tag
+            if payload.get("farmer_id") and "-" not in payload["farmer_id"]:
+                uuid = get_farmer_uuid(payload["farmer_id"])
+                if uuid:
+                    payload["farmer_id"] = uuid
+                else:
+                    print(f"[!] Skipping sync for {payload['batch_id']}: Farmer UUID not found for RFID {payload['farmer_id']}")
+                    continue # Skip sending this one for now until they register it on the web
+                    
             res = requests.post(endpoint, headers=headers, json=payload, timeout=3)
             if res.status_code == 201:
                 synced_indices.append(i)
@@ -208,20 +264,29 @@ def sync_offline_queue():
     with open(OFFLINE_QUEUE_FILE, "w") as f:
         json.dump(remaining_queue, f)
 
-def post_to_supabase(batch_id, farmer_id, overall_grade, ai_detections, weight_kg, gas_ppm):
+def post_to_supabase(batch_id, current_farmer_id, overall_grade, ai_detections, weight_kg, gas_ppm):
+    # Resolve the physical RFID tag to the Supabase UUID
+    farmer_uuid = get_farmer_uuid(current_farmer_id)
+    
+    payload = {
+        "batch_id": batch_id,
+        "farmer_id": farmer_uuid or current_farmer_id, # Fallback to raw ID to queue it if offline
+        "overall_grade": overall_grade,
+        "weight_kg": weight_kg,
+        "gas_ppm": gas_ppm,
+        "ai_detections": ai_detections
+    }
+    
+    if not farmer_uuid:
+        print(f"[!] Supabase Warning: No Web Account found matching RFID '{current_farmer_id}'. Queueing offline.")
+        save_to_offline_queue(payload)
+        return
+
     headers = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
-    }
-    payload = {
-        "batch_id": batch_id,
-        "farmer_id": farmer_id,
-        "overall_grade": overall_grade,
-        "weight_kg": weight_kg,
-        "gas_ppm": gas_ppm,
-        "ai_detections": ai_detections
     }
     endpoint = f"{SUPABASE_URL}/rest/v1/scans"
     try:
@@ -342,25 +407,19 @@ def main():
                     STATE = "LOGIN"
 
             elif STATE == "MENU":
-                display_text("1.Scan 2.Exit", "Use IR Remote")
+                display_text("Press IR = Scan", "Tap Card = Exit")
                 print(f"\n[ MENU ] User: {current_farmer_name}")
-                print("Options: Press '1' (or any IR button) to Scan, '2' to Exit")
+                print("Options: Press ANY button on IR Remote to SCAN, or Tap ANY RFID card to EXIT.")
                 
+                choice = "1"
                 if HARDWARE_AVAILABLE:
-                    # Without a specific LIRC decoder, we just assume the first IR edge is "SCAN".
-                    # However, to simulate 2 choices, we'll ask the user to just press any button to scan,
-                    # or wait a timeout to exit? Actually, let's just listen to input() on terminal for exact,
-                    # and rely on wait_for_ir_any() for the physical remote to trigger "Scan".
-                    # To "Exit", they might need to rescan RFID?
-                    # The prompt said "dia bisa memilih ingin scan komoditas atau exit". 
-                    # We will simulate menu choice via terminal for precise control, and use IR edge as a default "Scan" if pressed.
-                    print("[ IR ] Waiting for input...")
-                    # We will just wait for IR edge, assuming they press "Scan".
-                    GPIO.wait_for_edge(IR_PIN, GPIO.FALLING)
-                    time.sleep(0.3)
-                    choice = "1" # Assume scan for physical button press
+                    action = wait_for_ir_or_rfid()
+                    if action == "IR":
+                        choice = "1"
+                    elif action == "RFID":
+                        choice = "2"
                 else:
-                    choice = input("Enter choice (1/2): ")
+                    choice = input("Enter choice (1 to Scan, 2 to Exit): ")
                 
                 if choice == "1":
                     STATE = "SCAN"
@@ -435,7 +494,7 @@ def main():
             elif STATE == "QR":
                 print(f"\n[ QR ] Displaying Batch ID: {batch_id}")
                 display_qr(batch_id)
-                wait_for_ir_any()
+                wait_for_ir_or_rfid()
                 print("[ QR ] Exit signal received. Returning to Login.")
                 STATE = "LOGIN"
 

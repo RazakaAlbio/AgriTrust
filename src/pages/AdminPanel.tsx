@@ -425,7 +425,7 @@ function BlockchainTabContent() {
 // ── Main AdminPanel component ─────────────────────────────────────────────────
 export default function AdminPanel() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"register" | "rfid" | "devices" | "blockchain" | "disputes" | "sync">("register");
+  const [activeTab, setActiveTab] = useState<"register" | "rfid" | "blockchain" | "disputes" | "sync">("register");
 
   // Register Form State
   const [form, setForm] = useState({ name: "", email: "", passcode: "", rfid_tag: "", location: "", group_class: "" });
@@ -433,14 +433,12 @@ export default function AdminPanel() {
   const [successMsg, setSuccessMsg] = useState("");
 
   // Data State
-  const [devices, setDevices] = useState<any[]>([]);
   const [farmers, setFarmers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const tabs = [
     { id: "register"   as const, label: "Register",   icon: UserPlus  },
     { id: "rfid"       as const, label: "RFID Mgmt",  icon: CreditCard },
-    { id: "devices"    as const, label: "Devices",    icon: Server     },
     { id: "blockchain" as const, label: "Blockchain", icon: Link2      },
     { id: "disputes"   as const, label: "Disputes",   icon: AlertCircle },
     { id: "sync"       as const, label: "Offline Sync", icon: UploadCloud },
@@ -449,11 +447,9 @@ export default function AdminPanel() {
   useEffect(() => {
     async function fetchData() {
       setIsLoading(true);
-      const [devRes, farmRes] = await Promise.all([
-        supabase.from('devices').select('*'),
+      const [farmRes] = await Promise.all([
         supabase.from('farmers').select('*')
       ]);
-      if (devRes.data) setDevices(devRes.data);
       if (farmRes.data) setFarmers(farmRes.data);
       setIsLoading(false);
     }
@@ -480,11 +476,13 @@ export default function AdminPanel() {
 
   const handleDeleteFarmer = async (id: string) => {
     if (!confirm("Are you sure you want to delete this farmer? This action cannot be undone.")) return;
+    // Hapus relasi scan terlebih dahulu agar tidak error foreign key constraint
+    await supabase.from('scans').delete().eq('farmer_id', id);
     const { error } = await supabase.from('farmers').delete().eq('id', id);
     if (!error) {
       setFarmers(farmers.filter(f => f.id !== id));
     } else {
-      alert("Failed to delete farmer.");
+      alert("Failed to delete farmer: " + error.message);
     }
   };
 
@@ -494,7 +492,19 @@ export default function AdminPanel() {
     if (!error) {
       setFarmers(farmers.map(f => f.id === id ? { ...f, rfid_tag: null } : f));
     } else {
-      alert("Failed to revoke RFID.");
+      alert("Failed to revoke RFID: " + error.message);
+    }
+  };
+
+  const handleAssignRfid = async (id: string) => {
+    const newTag = prompt("Enter new RFID tag (e.g. 1A2B3C4D):");
+    if (!newTag) return;
+    const cleanedTag = newTag.trim().toUpperCase();
+    const { error } = await supabase.from('farmers').update({ rfid_tag: cleanedTag }).eq('id', id);
+    if (!error) {
+      setFarmers(farmers.map(f => f.id === id ? { ...f, rfid_tag: cleanedTag } : f));
+    } else {
+      alert("Failed to assign new RFID: " + error.message);
     }
   };
 
@@ -625,9 +635,13 @@ export default function AdminPanel() {
                                 )}
                               </td>
                               <td className="p-3 text-right space-x-2">
-                                {farmer.rfid_tag && (
+                                {farmer.rfid_tag ? (
                                   <button onClick={() => handleRevokeRfid(farmer.id)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-orange-500 border border-border hover:border-orange-500/50 px-2 py-1 transition-colors">
                                     Revoke
+                                  </button>
+                                ) : (
+                                  <button onClick={() => handleAssignRfid(farmer.id)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-green-500 border border-border hover:border-green-500/50 px-2 py-1 transition-colors">
+                                    Assign
                                   </button>
                                 )}
                                 <button onClick={() => handleDeleteFarmer(farmer.id)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-destructive border border-border hover:border-destructive/50 px-2 py-1 transition-colors">
@@ -643,51 +657,7 @@ export default function AdminPanel() {
                 </motion.div>
               )}
 
-              {activeTab === "devices" && (
-                <motion.div key="devices" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
-                  <div>
-                    <h2 className="text-sm font-bold text-foreground">Edge Devices</h2>
-                    <p className="text-xs text-muted-foreground">Real-time status of compute nodes.</p>
-                  </div>
-                  {isLoading ? (
-                    <div className="text-sm text-muted-foreground animate-pulse">Loading devices...</div>
-                  ) : (
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      {devices.map((dev, i) => {
-                        const isOnline = dev.status === "online";
-                        return (
-                          <div key={i} className={`border p-4 ${isOnline ? "border-primary/50 bg-primary/5" : "border-border bg-secondary/20"}`}>
-                            <div className="flex items-start justify-between mb-4">
-                              <div className="flex items-center gap-2">
-                                {isOnline ? <Wifi className="w-4 h-4 text-primary" /> : <WifiOff className="w-4 h-4 text-muted-foreground" />}
-                                <span className="font-mono text-sm font-bold text-foreground">{dev.device_name}</span>
-                              </div>
-                              <span className={`text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 border ${isOnline ? "text-primary border-primary/30" : "text-muted-foreground border-border"}`}>
-                                {dev.status}
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4 text-xs">
-                              <div>
-                                <span className="text-muted-foreground block mb-0.5">Type</span>
-                                <span className="font-mono text-foreground uppercase">{dev.device_type}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground block mb-0.5">Last Ping</span>
-                                <span className="font-mono text-foreground">{dev.last_ping ? new Date(dev.last_ping).toLocaleTimeString() : 'Never'}</span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {devices.length === 0 && (
-                        <div className="col-span-2 p-8 text-center border border-dashed border-border text-muted-foreground text-sm">
-                          No devices connected.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </motion.div>
-              )}
+
 
               {activeTab === "blockchain" && (
                 <motion.div key="blockchain" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>

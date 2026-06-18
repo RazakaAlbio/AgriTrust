@@ -28,7 +28,6 @@ export default function OverviewTab() {
   });
   
   const [chartData, setChartData] = useState<any[]>([]);
-  const [devices, setDevices] = useState<any[]>([]);
   
   useEffect(() => {
     async function fetchData() {
@@ -38,9 +37,6 @@ export default function OverviewTab() {
         
         // Fetch Scans for stats & charts
         const { data: scans } = await supabase.from('scans').select('*');
-        
-        // Fetch Devices
-        const { data: devs } = await supabase.from('devices').select('*');
         
         if (scans && scans.length > 0) {
           const total = scans.length;
@@ -70,10 +66,6 @@ export default function OverviewTab() {
         } else {
           setStats({ activeFarmers: farmersCount || 0, totalScanned: 0, gradeARate: "0%", rejectRate: "0%" });
           setChartData([]);
-        }
-        
-        if (devs) {
-          setDevices(devs);
         }
       } catch (err) {
         console.error(err);
@@ -282,29 +274,7 @@ export default function OverviewTab() {
 
         {/* ── Right Column: Health & Alerts ── */}
         <div className="space-y-4">
-          {/* System Health */}
-          <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="border border-border">
-            <div className="border-b border-border p-3 bg-secondary/30">
-              <p className="data-label !mb-0">System Health</p>
-            </div>
-            <div className="divide-y divide-border">
-              {devices.map((sys) => (
-                <div key={sys.id} className="p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Server className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium text-foreground">{sys.device_name}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`status-dot ${sys.status === 'online' ? 'status-dot-synced' : 'bg-destructive shadow-[0_0_8px_rgba(var(--destructive-rgb),0.8)]'}`} />
-                    <span className="text-xs font-mono text-muted-foreground uppercase">{sys.device_type}</span>
-                  </div>
-                </div>
-              ))}
-              {devices.length === 0 && (
-                <div className="p-3 text-xs text-muted-foreground">No devices registered.</div>
-              )}
-            </div>
-          </motion.div>
+
 
           {/* Recent Alerts */}
           <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="border border-border">
